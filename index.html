@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keychain Studio — 3MF generator</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="logo">◈</span> Keychain&nbsp;Studio</div>
+  <div class="grow"></div>
+  <input type="text" class="namefield" aria-label="Export file name" data-bind="name" placeholder="file name" title="Export file name">
+  <label class="inline">Quality
+    <select data-bind="quality" title="Raster resolution used to build the mesh">
+      <option value="8">Draft</option>
+      <option value="14" selected>Normal</option>
+      <option value="22">Fine</option>
+      <option value="32">Ultra</option>
+    </select>
+  </label>
+  <button id="btn-save" class="ghost" title="Save design as JSON">Save</button>
+  <button id="btn-load" class="ghost" title="Load design JSON">Load</button>
+  <button id="btn-stl" class="ghost" title="Single-colour mesh">STL</button>
+  <button id="btn-3mf" class="primary">Export 3MF</button>
+</header>
+
+<main class="layout">
+
+  <!-- ─────────────────────────── controls ─────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+
+    <section class="panel open">
+      <h2>Shape</h2>
+      <div class="body">
+        <div class="row">
+          <label for="shape-preset">Preset</label>
+          <select data-bind="shape.preset" id="shape-preset"></select>
+        </div>
+        <div class="row" data-show="shape.preset:custom">
+          <label>Custom outline</label>
+          <button class="ghost wide" data-draw="shape">Draw outline…</button>
+        </div>
+        <div class="row">
+          <label for="f-shape-width">Width <b data-val="shape.width"></b></label>
+          <input id="f-shape-width" type="range" data-bind="shape.width" min="15" max="120" step="0.5">
+        </div>
+        <div class="row" data-hide="shape.preset:square|circle">
+          <label for="f-shape-height">Height <b data-val="shape.height"></b></label>
+          <input id="f-shape-height" type="range" data-bind="shape.height" min="15" max="120" step="0.5">
+        </div>
+        <div class="row" data-show="shape.preset:rect|square|tri|pent|hex|oct|star|shield">
+          <label for="f-shape-radius">Corner radius <b data-val="shape.radius"></b></label>
+          <input id="f-shape-radius" type="range" data-bind="shape.radius" min="0" max="25" step="0.25">
+        </div>
+        <div class="row">
+          <label for="f-shape-thickness">Thickness <b data-val="shape.thickness"></b></label>
+          <input id="f-shape-thickness" type="range" data-bind="shape.thickness" min="0.4" max="5" step="0.1">
+        </div>
+        <div class="row">
+          <span class="lbl">Relief style</span>
+          <div class="seg" role="group" aria-label="Relief style" data-bind="shape.relief">
+            <button value="raised">Raised</button>
+            <button value="inlay">Inlay</button>
+            <button value="engraved">Engraved</button>
+          </div>
+        </div>
+        <p class="hint" data-show="shape.relief:raised">Details sit proudly on top of the plate. Prints in one colour on a single-extruder machine, or in full colour with an AMS/MMU.</p>
+        <p class="hint" data-show="shape.relief:inlay">Details are cut clean through the plate and filled with their own colour — a flush, two-sided finish. Needs a multi-material printer.</p>
+        <p class="hint" data-show="shape.relief:engraved">Details are recessed into the plate. Single colour, no multi-material needed.</p>
+        <div class="row" data-hide="shape.relief:inlay">
+          <label for="f-shape-reliefHeight">Relief depth <b data-val="shape.reliefHeight"></b></label>
+          <input id="f-shape-reliefHeight" type="range" data-bind="shape.reliefHeight" min="0.2" max="3" step="0.1">
+        </div>
+      </div>
+    </section>
+
+    <section class="panel open">
+      <h2>Keyring hole</h2>
+      <div class="body">
+        <div class="row inlinerow">
+          <label class="chk"><input type="checkbox" data-bind="hole.enabled"> Include hole</label>
+        </div>
+        <div class="row" data-show="hole.enabled:true">
+          <label for="f-hole-diameter">Diameter <b data-val="hole.diameter"></b></label>
+          <input id="f-hole-diameter" type="range" data-bind="hole.diameter" min="2" max="10" step="0.25">
+        </div>
+        <div class="row" data-show="hole.enabled:true">
+          <label for="f-hole-margin">Edge margin <b data-val="hole.margin"></b></label>
+          <input id="f-hole-margin" type="range" data-bind="hole.margin" min="1" max="12" step="0.25">
+        </div>
+        <div class="row" data-show="hole.enabled:true">
+          <label for="f-hole-position">Position</label>
+          <select id="f-hole-position" data-bind="hole.position">
+            <option value="tl">Top left</option>
+            <option value="tc">Top centre</option>
+            <option value="tr">Top right</option>
+            <option value="lc">Left centre</option>
+            <option value="rc">Right centre</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel open">
+      <h2>Border</h2>
+      <div class="body">
+        <div class="row">
+          <label for="f-border-style">Style</label>
+          <select id="f-border-style" data-bind="border.style">
+            <option value="none">None</option>
+            <option value="single">Single line</option>
+            <option value="double">Double line</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+            <option value="band">Thick band</option>
+          </select>
+        </div>
+        <div class="row" data-hide="border.style:none">
+          <label for="f-border-shape">Follows</label>
+          <select id="f-border-shape" data-bind="border.shape">
+            <option value="follow">The keychain outline</option>
+            <option value="rect">Rectangle</option>
+            <option value="circle">Circle</option>
+            <option value="ellipse">Ellipse</option>
+            <option value="pill">Capsule</option>
+            <option value="hex">Hexagon</option>
+            <option value="oct">Octagon</option>
+            <option value="tri">Triangle</option>
+            <option value="star">Star</option>
+            <option value="heart">Heart</option>
+            <option value="shield">Shield</option>
+          </select>
+        </div>
+        <div class="row" data-hide="border.style:none">
+          <label for="f-border-inset">Inset from edge <b data-val="border.inset"></b></label>
+          <input id="f-border-inset" type="range" data-bind="border.inset" min="0.5" max="20" step="0.25">
+        </div>
+        <div class="row" data-hide="border.style:none">
+          <label for="f-border-width">Line width <b data-val="border.width"></b></label>
+          <input id="f-border-width" type="range" data-bind="border.width" min="0.4" max="10" step="0.1">
+        </div>
+        <div class="row" data-show="border.style:double">
+          <label for="f-border-gap">Gap <b data-val="border.gap"></b></label>
+          <input id="f-border-gap" type="range" data-bind="border.gap" min="0.4" max="8" step="0.1">
+        </div>
+        <div class="row" data-show="border.style:dashed|dotted">
+          <label for="f-border-dashes">Count <b data-val="border.dashes" data-fmt="n"></b></label>
+          <input id="f-border-dashes" type="range" data-bind="border.dashes" min="4" max="80" step="1">
+        </div>
+        <div class="row" data-show="border.shape:rect|circle|ellipse|pill|hex|oct|tri|star|heart|shield">
+          <label for="f-border-radius">Corner radius <b data-val="border.radius"></b></label>
+          <input id="f-border-radius" type="range" data-bind="border.radius" min="0" max="20" step="0.25">
+        </div>
+      </div>
+    </section>
+
+    <section class="panel open">
+      <h2>Text</h2>
+      <div class="body">
+        <div class="row">
+          <textarea aria-label="Keychain text" data-bind="text.content" rows="2" placeholder="Your text — Enter for a new line"></textarea>
+        </div>
+        <div class="row">
+          <label for="font-select">Font</label>
+          <select data-bind="text.font" id="font-select"></select>
+        </div>
+        <div class="row inlinerow">
+          <div class="seg small" data-bind="text.style">
+            <button value="fill">Solid</button>
+            <button value="outline">Outline</button>
+          </div>
+          <label class="chk"><input type="checkbox" data-bind="text.bold"> Bold</label>
+          <label class="chk"><input type="checkbox" data-bind="text.italic"> Italic</label>
+        </div>
+        <div class="row" data-show="text.style:outline">
+          <label for="f-text-strokeWidth">Stroke width <b data-val="text.strokeWidth"></b></label>
+          <input id="f-text-strokeWidth" type="range" data-bind="text.strokeWidth" min="0.3" max="3" step="0.1">
+        </div>
+        <div class="row">
+          <label for="f-text-size">Size <b data-val="text.size"></b></label>
+          <input id="f-text-size" type="range" data-bind="text.size" min="2" max="40" step="0.25">
+        </div>
+        <div class="row">
+          <label for="f-text-tracking">Letter spacing <b data-val="text.tracking"></b></label>
+          <input id="f-text-tracking" type="range" data-bind="text.tracking" min="-1" max="6" step="0.05">
+        </div>
+        <div class="row">
+          <label for="f-text-lineHeight">Line height <b data-val="text.lineHeight" data-fmt="x"></b></label>
+          <input id="f-text-lineHeight" type="range" data-bind="text.lineHeight" min="0.8" max="2" step="0.05">
+        </div>
+        <div class="row">
+          <label for="f-text-rotation">Rotation <b data-val="text.rotation" data-fmt="deg"></b></label>
+          <input id="f-text-rotation" type="range" data-bind="text.rotation" min="-180" max="180" step="1">
+        </div>
+        <div class="row inlinerow">
+          <div class="seg small" data-bind="text.align">
+            <button value="left">Left</button>
+            <button value="center">Centre</button>
+            <button value="right">Right</button>
+          </div>
+          <button class="ghost" data-center="text">Centre on plate</button>
+        </div>
+        <p class="hint">Drag the text directly in the Layout view to position it.</p>
+      </div>
+    </section>
+
+    <section class="panel open">
+      <h2>Picture / drawing</h2>
+      <div class="body">
+        <div class="row">
+          <span class="lbl">Source</span>
+          <div class="seg" role="group" aria-label="Source" data-bind="art.source">
+            <button value="none">None</button>
+            <button value="image">Upload</button>
+            <button value="draw">Draw</button>
+          </div>
+        </div>
+        <div class="row" data-show="art.source:image">
+          <input type="file" id="art-file" accept="image/*" aria-label="Upload a picture">
+        </div>
+        <div class="row" data-show="art.source:draw">
+          <button class="ghost wide" data-draw="art">Open drawing pad…</button>
+        </div>
+        <div class="row" data-show="art.source:image">
+          <label for="f-art-mode">Trace</label>
+          <select id="f-art-mode" data-bind="art.mode">
+            <option value="auto">Auto</option>
+            <option value="alpha">Transparency</option>
+            <option value="dark">Dark areas</option>
+            <option value="light">Light areas</option>
+          </select>
+        </div>
+        <div class="row" data-show="art.source:image" data-hide="art.mode:alpha">
+          <label for="f-art-threshold">Threshold <b data-val="art.threshold" data-fmt="pct"></b></label>
+          <input id="f-art-threshold" type="range" data-bind="art.threshold" min="0.05" max="0.95" step="0.01">
+        </div>
+        <div class="row" data-hide="art.source:none">
+          <label for="f-art-size">Size <b data-val="art.size"></b></label>
+          <input id="f-art-size" type="range" data-bind="art.size" min="3" max="120" step="0.5">
+        </div>
+        <div class="row" data-hide="art.source:none">
+          <label for="f-art-rotation">Rotation <b data-val="art.rotation" data-fmt="deg"></b></label>
+          <input id="f-art-rotation" type="range" data-bind="art.rotation" min="-180" max="180" step="1">
+        </div>
+        <div class="row inlinerow" data-hide="art.source:none">
+          <label class="chk"><input type="checkbox" data-bind="art.mirror"> Mirror</label>
+          <button class="ghost" data-center="art">Centre on plate</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel open">
+      <h2>Colours <small>max 4 filaments</small></h2>
+      <div class="body">
+        <div class="swatches" id="swatches"></div>
+        <div class="assign" id="assign"></div>
+        <p class="hint" id="color-count"></p>
+      </div>
+    </section>
+
+  </aside>
+
+  <!-- ─────────────────────────── viewport ─────────────────────────── -->
+  <div class="viewport">
+    <div class="vptabs">
+      <div class="seg" id="viewtabs" role="group" aria-label="Preview mode">
+        <button value="2d" class="on">Layout</button>
+        <button value="3d">3D preview</button>
+      </div>
+      <div class="grow"></div>
+      <span class="stat" id="stat-dims"></span>
+      <span class="stat" id="stat-tris"></span>
+      <span class="stat" id="stat-mass"></span>
+    </div>
+
+    <div class="stage" id="stage">
+      <canvas id="c2d"></canvas>
+      <canvas id="c3d" hidden></canvas>
+      <div class="hud" id="hud3d" hidden>drag to orbit · scroll to zoom · shift-drag to pan</div>
+      <div class="busy" id="busy" hidden><div class="spinner"></div><span id="busy-text">Building…</span></div>
+    </div>
+
+    <div class="warnings" id="warnings"></div>
+  </div>
+</main>
+
+<!-- ─────────────────────────── drawing modal ─────────────────────────── -->
+<div class="modal" id="drawmodal" hidden>
+  <div class="sheet">
+    <header>
+      <strong id="draw-title">Drawing pad</strong>
+      <div class="grow"></div>
+      <button class="ghost" id="draw-cancel">Cancel</button>
+      <button class="primary" id="draw-apply">Apply</button>
+    </header>
+    <div class="drawbody">
+      <canvas id="drawcanvas" width="540" height="540"></canvas>
+      <div class="drawtools">
+        <div class="seg vert" id="draw-tool" role="group" aria-label="Drawing tool">
+          <button value="brush" class="on">Brush</button>
+          <button value="eraser">Eraser</button>
+          <button value="line">Line</button>
+          <button value="rect">Rect</button>
+          <button value="ellipse">Ellipse</button>
+        </div>
+        <label for="draw-size">Size <b id="draw-size-val">14</b></label>
+        <input type="range" id="draw-size" aria-label="Brush size" min="2" max="90" step="1" value="14">
+        <label class="chk" id="draw-fill-wrap"><input type="checkbox" id="draw-fill" checked> Fill enclosed areas</label>
+        <button class="ghost" id="draw-undo">Undo</button>
+        <button class="ghost" id="draw-clear">Clear</button>
+        <p class="hint" id="draw-hint"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="loadfile" accept="application/json" aria-label="Load a saved design" hidden>
+
+<script src="src/util.js"></script>
+<script src="src/earcut.js"></script>
+<script src="src/edt.js"></script>
+<script src="src/contour.js"></script>
+<script src="src/shapes.js"></script>
+<script src="src/raster.js"></script>
+<script src="src/mesh.js"></script>
+<script src="src/zip.js"></script>
+<script src="src/export.js"></script>
+<script src="src/gl.js"></script>
+<script src="src/preview.js"></script>
+<script src="src/drawpad.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

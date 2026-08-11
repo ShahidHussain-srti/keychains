@@ -207,3 +207,15 @@ input[type=file]::file-selector-button{
 .drawtools{width:172px; display:flex; flex-direction:column; gap:9px}
 .drawtools label{color:var(--ink2); font-size:12px; display:flex; justify-content:space-between}
 .drawtools label b{font-family:var(--mono); color:var(--ink)}
+
+/* undo/redo glyph buttons */
+.topbar button.icon{
+  font-size:15px; line-height:1; padding:5px 9px; min-width:32px;
+  font-family:-apple-system,"Segoe UI Symbol",sans-serif;
+}
+#c2d:focus-visible{outline:2px solid var(--acc2); outline-offset:-2px}
+
+/* side switcher */
+.sidepanel{background:linear-gradient(180deg,rgba(90,169,255,.06),transparent)}
+.panel > h2 small{opacity:.85}
+.warnish{color:var(--warn); font-size:11px}

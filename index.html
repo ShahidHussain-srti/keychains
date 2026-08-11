@@ -11,6 +11,8 @@
 
 <header class="topbar">
   <div class="brand"><span class="logo">◈</span> Keychain&nbsp;Studio</div>
+  <button id="btn-undo" class="ghost icon" title="Undo (⌘Z / Ctrl+Z)" aria-label="Undo">↶</button>
+  <button id="btn-redo" class="ghost icon" title="Redo (⇧⌘Z / Ctrl+Y)" aria-label="Redo">↷</button>
   <div class="grow"></div>
   <input type="text" class="namefield" aria-label="Export file name" data-bind="name" placeholder="file name" title="Export file name">
   <label class="inline">Quality
@@ -21,6 +23,7 @@
       <option value="32">Ultra</option>
     </select>
   </label>
+  <button id="btn-reset" class="ghost" title="Discard this design and start over">Reset</button>
   <button id="btn-save" class="ghost" title="Save design as JSON">Save</button>
   <button id="btn-load" class="ghost" title="Load design JSON">Load</button>
   <button id="btn-stl" class="ghost" title="Single-colour mesh">STL</button>
@@ -57,7 +60,7 @@
         </div>
         <div class="row">
           <label for="f-shape-thickness">Thickness <b data-val="shape.thickness"></b></label>
-          <input id="f-shape-thickness" type="range" data-bind="shape.thickness" min="0.4" max="5" step="0.1">
+          <input id="f-shape-thickness" type="range" data-bind="shape.thickness" min="0.6" max="5" step="0.1">
         </div>
         <div class="row">
           <span class="lbl">Relief style</span>
@@ -68,11 +71,23 @@
           </div>
         </div>
         <p class="hint" data-show="shape.relief:raised">Details sit proudly on top of the plate. Prints in one colour on a single-extruder machine, or in full colour with an AMS/MMU.</p>
-        <p class="hint" data-show="shape.relief:inlay">Details are cut clean through the plate and filled with their own colour — a flush, two-sided finish. Needs a multi-material printer.</p>
+        <p class="hint" data-show="shape.relief:inlay">Details are filled with their own colour, flush with the surface. Needs a multi-material printer.</p>
         <p class="hint" data-show="shape.relief:engraved">Details are recessed into the plate. Single colour, no multi-material needed.</p>
         <div class="row" data-hide="shape.relief:inlay">
           <label for="f-shape-reliefHeight">Relief depth <b data-val="shape.reliefHeight"></b></label>
-          <input id="f-shape-reliefHeight" type="range" data-bind="shape.reliefHeight" min="0.2" max="3" step="0.1">
+          <input id="f-shape-reliefHeight" type="range" data-bind="shape.reliefHeight" min="0.6" max="3" step="0.2">
+        </div>
+        <div class="row inlinerow" data-show="shape.relief:inlay">
+          <label class="chk" title="A cut through the plate is visible from both faces"><input type="checkbox" data-bind="shape.inlayThrough"> Cut all the way through <span class="warnish">(shows on both faces)</span></label>
+        </div>
+        <div class="row" data-show="shape.relief:inlay" data-hide="shape.inlayThrough:true">
+          <label for="f-shape-inlayDepth">Inlay depth <b data-val="shape.inlayDepth"></b></label>
+          <input id="f-shape-inlayDepth" type="range" data-bind="shape.inlayDepth" min="0.6" max="5" step="0.2">
+        </div>
+        <p class="hint" data-show="shape.relief:inlay"><b id="inlay-layers"></b></p>
+        <div class="row">
+          <label for="f-layerHeight">Layer height <b data-val="layerHeight"></b></label>
+          <input id="f-layerHeight" type="range" data-bind="layerHeight" min="0.08" max="0.4" step="0.02">
         </div>
       </div>
     </section>
@@ -99,17 +114,50 @@
             <option value="tr">Top right</option>
             <option value="lc">Left centre</option>
             <option value="rc">Right centre</option>
+            <option value="custom">Anywhere (drag it)</option>
           </select>
         </div>
+        <div class="row" data-show="hole.position:custom">
+          <label for="f-hole-x">Position across <b data-val="hole.x"></b></label>
+          <input id="f-hole-x" type="range" data-bind="hole.x" min="-60" max="60" step="0.25">
+        </div>
+        <div class="row" data-show="hole.position:custom">
+          <label for="f-hole-y">Position up/down <b data-val="hole.y"></b></label>
+          <input id="f-hole-y" type="range" data-bind="hole.y" min="-60" max="60" step="0.25">
+        </div>
+        <p class="hint" data-show="hole.enabled:true">Drag the hole in the Layout view to place it freely.</p>
+      </div>
+    </section>
+
+    <section class="panel open sidepanel">
+      <h2>Side <small>front / back</small></h2>
+      <div class="body">
+        <div class="row">
+          <span class="lbl">Editing</span>
+          <div class="seg" role="group" aria-label="Which side to edit" data-bind="activeSide">
+            <button value="front">Front</button>
+            <button value="back">Back</button>
+          </div>
+        </div>
+        <div class="row inlinerow">
+          <label class="chk"><input type="checkbox" id="side-enabled"> This side has decoration</label>
+        </div>
+        <div class="row">
+          <button class="ghost wide" id="btn-dup-side">Copy this side to the other</button>
+        </div>
+        <div class="row">
+          <button class="ghost wide" id="btn-clear-side">Turn off the other side</button>
+        </div>
+        <p class="hint" id="side-hint"></p>
       </div>
     </section>
 
     <section class="panel open">
-      <h2>Border</h2>
+      <h2>Border <small id="cap-border"></small></h2>
       <div class="body">
         <div class="row">
-          <label for="f-border-style">Style</label>
-          <select id="f-border-style" data-bind="border.style">
+          <label for="f-b-style">Style</label>
+          <select id="f-b-style" data-bind="~.border.style">
             <option value="none">None</option>
             <option value="single">Single line</option>
             <option value="double">Double line</option>
@@ -118,9 +166,9 @@
             <option value="band">Thick band</option>
           </select>
         </div>
-        <div class="row" data-hide="border.style:none">
-          <label for="f-border-shape">Follows</label>
-          <select id="f-border-shape" data-bind="border.shape">
+        <div class="row" data-hide="~.border.style:none">
+          <label for="f-b-shape">Follows</label>
+          <select id="f-b-shape" data-bind="~.border.shape">
             <option value="follow">The keychain outline</option>
             <option value="rect">Rectangle</option>
             <option value="circle">Circle</option>
@@ -134,121 +182,139 @@
             <option value="shield">Shield</option>
           </select>
         </div>
-        <div class="row" data-hide="border.style:none">
-          <label for="f-border-inset">Inset from edge <b data-val="border.inset"></b></label>
-          <input id="f-border-inset" type="range" data-bind="border.inset" min="0.5" max="20" step="0.25">
+        <div class="row" data-hide="~.border.style:none">
+          <label for="f-b-inset">Inset from edge <b data-val="~.border.inset"></b></label>
+          <input id="f-b-inset" type="range" data-bind="~.border.inset" min="0" max="20" step="0.25">
         </div>
-        <div class="row" data-hide="border.style:none">
-          <label for="f-border-width">Line width <b data-val="border.width"></b></label>
-          <input id="f-border-width" type="range" data-bind="border.width" min="0.4" max="10" step="0.1">
+        <p class="hint" data-show="~.border.inset:0">Flush with the edge — the border becomes the rim of the keychain.</p>
+        <div class="row" data-hide="~.border.style:none">
+          <label for="f-b-width">Line width <b data-val="~.border.width"></b></label>
+          <input id="f-b-width" type="range" data-bind="~.border.width" min="0.4" max="10" step="0.1">
         </div>
-        <div class="row" data-show="border.style:double">
-          <label for="f-border-gap">Gap <b data-val="border.gap"></b></label>
-          <input id="f-border-gap" type="range" data-bind="border.gap" min="0.4" max="8" step="0.1">
+        <div class="row" data-show="~.border.style:double">
+          <label for="f-b-gap">Gap <b data-val="~.border.gap"></b></label>
+          <input id="f-b-gap" type="range" data-bind="~.border.gap" min="0.4" max="8" step="0.1">
         </div>
-        <div class="row" data-show="border.style:dashed|dotted">
-          <label for="f-border-dashes">Count <b data-val="border.dashes" data-fmt="n"></b></label>
-          <input id="f-border-dashes" type="range" data-bind="border.dashes" min="4" max="80" step="1">
+        <div class="row" data-show="~.border.style:dashed|dotted">
+          <label for="f-b-dashes">Count <b data-val="~.border.dashes" data-fmt="n"></b></label>
+          <input id="f-b-dashes" type="range" data-bind="~.border.dashes" min="4" max="80" step="1">
         </div>
-        <div class="row" data-show="border.shape:rect|circle|ellipse|pill|hex|oct|tri|star|heart|shield">
-          <label for="f-border-radius">Corner radius <b data-val="border.radius"></b></label>
-          <input id="f-border-radius" type="range" data-bind="border.radius" min="0" max="20" step="0.25">
+        <div class="row" data-show="~.border.shape:rect|circle|ellipse|pill|hex|oct|tri|star|heart|shield">
+          <label for="f-b-radius">Corner radius <b data-val="~.border.radius"></b></label>
+          <input id="f-b-radius" type="range" data-bind="~.border.radius" min="0" max="20" step="0.25">
         </div>
       </div>
     </section>
 
     <section class="panel open">
-      <h2>Text</h2>
+      <h2>Text <small id="cap-text"></small></h2>
       <div class="body">
         <div class="row">
-          <textarea aria-label="Keychain text" data-bind="text.content" rows="2" placeholder="Your text — Enter for a new line"></textarea>
+          <textarea aria-label="Keychain text" data-bind="~.text.content" rows="2" placeholder="Your text — Enter for a new line"></textarea>
         </div>
         <div class="row">
           <label for="font-select">Font</label>
-          <select data-bind="text.font" id="font-select"></select>
+          <select data-bind="~.text.font" id="font-select"></select>
         </div>
         <div class="row inlinerow">
-          <div class="seg small" data-bind="text.style">
+          <div class="seg small" data-bind="~.text.style">
             <button value="fill">Solid</button>
             <button value="outline">Outline</button>
           </div>
-          <label class="chk"><input type="checkbox" data-bind="text.bold"> Bold</label>
-          <label class="chk"><input type="checkbox" data-bind="text.italic"> Italic</label>
+          <label class="chk"><input type="checkbox" data-bind="~.text.bold"> Bold</label>
+          <label class="chk"><input type="checkbox" data-bind="~.text.italic"> Italic</label>
         </div>
-        <div class="row" data-show="text.style:outline">
-          <label for="f-text-strokeWidth">Stroke width <b data-val="text.strokeWidth"></b></label>
-          <input id="f-text-strokeWidth" type="range" data-bind="text.strokeWidth" min="0.3" max="3" step="0.1">
-        </div>
-        <div class="row">
-          <label for="f-text-size">Size <b data-val="text.size"></b></label>
-          <input id="f-text-size" type="range" data-bind="text.size" min="2" max="40" step="0.25">
+        <div class="row" data-show="~.text.style:outline">
+          <label for="f-t-strokeWidth">Stroke width <b data-val="~.text.strokeWidth"></b></label>
+          <input id="f-t-strokeWidth" type="range" data-bind="~.text.strokeWidth" min="0.3" max="3" step="0.1">
         </div>
         <div class="row">
-          <label for="f-text-tracking">Letter spacing <b data-val="text.tracking"></b></label>
-          <input id="f-text-tracking" type="range" data-bind="text.tracking" min="-1" max="6" step="0.05">
+          <label for="f-t-size">Size <b data-val="~.text.size"></b></label>
+          <input id="f-t-size" type="range" data-bind="~.text.size" min="2" max="40" step="0.25">
         </div>
         <div class="row">
-          <label for="f-text-lineHeight">Line height <b data-val="text.lineHeight" data-fmt="x"></b></label>
-          <input id="f-text-lineHeight" type="range" data-bind="text.lineHeight" min="0.8" max="2" step="0.05">
+          <label for="f-t-tracking">Letter spacing <b data-val="~.text.tracking"></b></label>
+          <input id="f-t-tracking" type="range" data-bind="~.text.tracking" min="-1" max="6" step="0.05">
         </div>
         <div class="row">
-          <label for="f-text-rotation">Rotation <b data-val="text.rotation" data-fmt="deg"></b></label>
-          <input id="f-text-rotation" type="range" data-bind="text.rotation" min="-180" max="180" step="1">
+          <label for="f-t-lineHeight">Line height <b data-val="~.text.lineHeight" data-fmt="x"></b></label>
+          <input id="f-t-lineHeight" type="range" data-bind="~.text.lineHeight" min="0.8" max="2" step="0.05">
+        </div>
+        <div class="row">
+          <label for="f-t-rotation">Rotation <b data-val="~.text.rotation" data-fmt="deg"></b></label>
+          <input id="f-t-rotation" type="range" data-bind="~.text.rotation" min="-180" max="180" step="1">
         </div>
         <div class="row inlinerow">
-          <div class="seg small" data-bind="text.align">
+          <div class="seg small" data-bind="~.text.align">
             <button value="left">Left</button>
             <button value="center">Centre</button>
             <button value="right">Right</button>
           </div>
           <button class="ghost" data-center="text">Centre on plate</button>
         </div>
-        <p class="hint">Drag the text directly in the Layout view to position it.</p>
+        <div class="row">
+          <label for="f-t-x">Position across <b data-val="~.text.x"></b></label>
+          <input id="f-t-x" type="range" data-bind="~.text.x" min="-60" max="60" step="0.25">
+        </div>
+        <div class="row">
+          <label for="f-t-y">Position up/down <b data-val="~.text.y"></b></label>
+          <input id="f-t-y" type="range" data-bind="~.text.y" min="-60" max="60" step="0.25">
+        </div>
+        <p class="hint">Or click the text in the Layout view and drag it — arrow keys nudge, shift-arrow moves further.</p>
       </div>
     </section>
 
     <section class="panel open">
-      <h2>Picture / drawing</h2>
+      <h2>Picture / drawing <small id="cap-art"></small></h2>
       <div class="body">
         <div class="row">
           <span class="lbl">Source</span>
-          <div class="seg" role="group" aria-label="Source" data-bind="art.source">
+          <div class="seg" role="group" aria-label="Source" data-bind="~.art.source">
             <button value="none">None</button>
             <button value="image">Upload</button>
             <button value="draw">Draw</button>
           </div>
         </div>
-        <div class="row" data-show="art.source:image">
+        <div class="row" data-show="~.art.source:image">
           <input type="file" id="art-file" accept="image/*" aria-label="Upload a picture">
         </div>
-        <div class="row" data-show="art.source:draw">
+        <div class="row" data-show="~.art.source:draw">
           <button class="ghost wide" data-draw="art">Open drawing pad…</button>
         </div>
-        <div class="row" data-show="art.source:image">
-          <label for="f-art-mode">Trace</label>
-          <select id="f-art-mode" data-bind="art.mode">
+        <div class="row" data-show="~.art.source:image">
+          <label for="f-a-mode">Trace</label>
+          <select id="f-a-mode" data-bind="~.art.mode">
             <option value="auto">Auto</option>
             <option value="alpha">Transparency</option>
             <option value="dark">Dark areas</option>
             <option value="light">Light areas</option>
           </select>
         </div>
-        <div class="row" data-show="art.source:image" data-hide="art.mode:alpha">
-          <label for="f-art-threshold">Threshold <b data-val="art.threshold" data-fmt="pct"></b></label>
-          <input id="f-art-threshold" type="range" data-bind="art.threshold" min="0.05" max="0.95" step="0.01">
+        <div class="row" data-show="~.art.source:image" data-hide="~.art.mode:alpha">
+          <label for="f-a-threshold">Threshold <b data-val="~.art.threshold" data-fmt="pct"></b></label>
+          <input id="f-a-threshold" type="range" data-bind="~.art.threshold" min="0.05" max="0.95" step="0.01">
         </div>
-        <div class="row" data-hide="art.source:none">
-          <label for="f-art-size">Size <b data-val="art.size"></b></label>
-          <input id="f-art-size" type="range" data-bind="art.size" min="3" max="120" step="0.5">
+        <div class="row" data-hide="~.art.source:none">
+          <label for="f-a-size">Size <b data-val="~.art.size"></b></label>
+          <input id="f-a-size" type="range" data-bind="~.art.size" min="3" max="120" step="0.5">
         </div>
-        <div class="row" data-hide="art.source:none">
-          <label for="f-art-rotation">Rotation <b data-val="art.rotation" data-fmt="deg"></b></label>
-          <input id="f-art-rotation" type="range" data-bind="art.rotation" min="-180" max="180" step="1">
+        <div class="row" data-hide="~.art.source:none">
+          <label for="f-a-rotation">Rotation <b data-val="~.art.rotation" data-fmt="deg"></b></label>
+          <input id="f-a-rotation" type="range" data-bind="~.art.rotation" min="-180" max="180" step="1">
         </div>
-        <div class="row inlinerow" data-hide="art.source:none">
-          <label class="chk"><input type="checkbox" data-bind="art.mirror"> Mirror</label>
+        <div class="row inlinerow" data-hide="~.art.source:none">
+          <label class="chk"><input type="checkbox" data-bind="~.art.mirror"> Mirror</label>
           <button class="ghost" data-center="art">Centre on plate</button>
         </div>
+        <div class="row" data-hide="~.art.source:none">
+          <label for="f-a-x">Position across <b data-val="~.art.x"></b></label>
+          <input id="f-a-x" type="range" data-bind="~.art.x" min="-60" max="60" step="0.25">
+        </div>
+        <div class="row" data-hide="~.art.source:none">
+          <label for="f-a-y">Position up/down <b data-val="~.art.y"></b></label>
+          <input id="f-a-y" type="range" data-bind="~.art.y" min="-60" max="60" step="0.25">
+        </div>
+        <p class="hint" data-hide="~.art.source:none">Or click the picture in the Layout view and drag it — arrow keys nudge, shift-arrow moves further.</p>
       </div>
     </section>
 
@@ -277,7 +343,7 @@
     </div>
 
     <div class="stage" id="stage">
-      <canvas id="c2d"></canvas>
+      <canvas id="c2d" tabindex="0" aria-label="Keychain layout — click an element to select, drag to move"></canvas>
       <canvas id="c3d" hidden></canvas>
       <div class="hud" id="hud3d" hidden>drag to orbit · scroll to zoom · shift-drag to pan</div>
       <div class="busy" id="busy" hidden><div class="spinner"></div><span id="busy-text">Building…</span></div>

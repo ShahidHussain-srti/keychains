@@ -64,6 +64,12 @@ window.KC = window.KC || {};
     var sz = KC.plateSize(state);
     var r = state.hole.diameter / 2, m = state.hole.margin;
 
+    /* Dragged by hand: take the position as given and let the checker complain
+       if it runs off the edge, rather than fighting the user's pointer. */
+    if (state.hole.position === 'custom') {
+      return { x: state.hole.x, y: state.hole.y, r: r };
+    }
+
     var x = 0, y = 0;
     switch (state.hole.position) {
       case 'tl': x = -sz.w / 2 + m + r; y = sz.h / 2 - m - r; break;
@@ -265,8 +271,9 @@ window.KC = window.KC || {};
 
   /* ── picture / drawing ──────────────────────────────────────────── */
   KC.artSource = function (state) {
-    if (state.art.source === 'image') return KC.assets.image;
-    if (state.art.source === 'draw') return KC.assets.drawing;
+    var a = state._assets || KC.assets.front;
+    if (state.art.source === 'image') return a.image;
+    if (state.art.source === 'draw') return a.drawing;
     return null;
   };
 
@@ -302,7 +309,7 @@ window.KC = window.KC || {};
     var mode = state.art.mode;
     if (state.art.source === 'draw') return 'alpha';
     if (mode !== 'auto') return mode;
-    var src = KC.assets.image;
+    var src = (state._assets || KC.assets.front).image;
     if (!src) return 'alpha';
     if (src._hasAlpha == null) {
       var c = document.createElement('canvas');

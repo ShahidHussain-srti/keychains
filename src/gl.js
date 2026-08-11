@@ -33,14 +33,17 @@ window.KC = window.KC || {};
     '  vec3 l1 = normalize(vec3(0.45, -0.7, 1.0));',
     '  vec3 l2 = normalize(vec3(-0.8, 0.5, 0.35));',
     '  float d1 = max(dot(n, l1), 0.0);',
-    '  float d2 = max(dot(n, l2), 0.0) * 0.35;',
-    '  float sky = 0.32 + 0.28 * (n.z * 0.5 + 0.5);',   // hemispheric fill
+    '  float d2 = max(dot(n, l2), 0.0);',
+    // Filament colours are sRGB. Light has to be mixed in linear space and the
+    // result encoded back, or dark colours wash out to grey.
+    '  vec3 base = pow(vC, vec3(2.2));',
+    '  float amb = 0.26 + 0.18 * (n.z * 0.5 + 0.5);',   // hemispheric fill
+    '  float dif = 0.52 * d1 + 0.18 * d2;',
     '  vec3 h = normalize(l1 + v);',
-    '  float spec = pow(max(dot(n, h), 0.0), 42.0) * 0.28;',
-    '  float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.10;',
-    '  vec3 col = vC * (sky + d1 * 0.72 + d2) + spec + rim;',
-    '  col = col / (col + vec3(0.42)) * 1.42;',          // gentle tonemap
-    '  gl_FragColor = vec4(pow(col, vec3(0.4545)), 1.0);',
+    '  float spec = pow(max(dot(n, h), 0.0), 38.0) * 0.16;',
+    '  float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.14;',
+    '  vec3 col = base * (amb + dif + rim) + vec3(spec);',
+    '  gl_FragColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);',
     '}'
   ].join('\n');
 
@@ -163,13 +166,25 @@ window.KC = window.KC || {};
     canvas.addEventListener('dblclick', function () { self.frame(); self.draw(); });
   };
 
-  /* Build the interleaved flat-shaded buffer from exported parts. */
+  /* Build the interleaved flat-shaded buffer from exported parts.
+     The plate goes first and the details after, so the two can be drawn as
+     separate passes — a flush inlay is genuinely coplanar with the plate face,
+     and without a depth bias the tie shows up as z-fighting speckle. */
   KC.Viewer.prototype.setModel = function (parts) {
     if (this.failed) return;
     var gl = this.gl;
-    var tris = 0;
-    parts.forEach(function (p) { tris += p.indices.length / 3; });
+    var ordered = parts.slice().sort(function (a, b) {
+      return (a.key === 'base' ? 0 : 1) - (b.key === 'base' ? 0 : 1);
+    });
+    parts = ordered;
+
+    var tris = 0, baseTris = 0;
+    parts.forEach(function (p) {
+      tris += p.indices.length / 3;
+      if (p.key === 'base') baseTris += p.indices.length / 3;
+    });
     this.count = tris * 3;
+    this.baseCount = baseTris * 3;
     if (!tris) { this.bounds = null; return; }
 
     var data = new Float32Array(tris * 3 * 9);
@@ -257,7 +272,17 @@ window.KC = window.KC || {};
     gl.enableVertexAttribArray(this.loc.col);
     gl.vertexAttribPointer(this.loc.col, 3, gl.FLOAT, false, stride, 24);
 
-    gl.drawArrays(gl.TRIANGLES, 0, this.count);
+    /* Plate first at true depth, then the details pulled a hair forward so a
+       flush or through inlay wins the tie against the surface it sits in. */
+    var detail = this.count - this.baseCount;
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    if (this.baseCount) gl.drawArrays(gl.TRIANGLES, 0, this.baseCount);
+    if (detail > 0) {
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-1.0, -2.0);
+      gl.drawArrays(gl.TRIANGLES, this.baseCount, detail);
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+    }
   };
 
 })(window.KC);

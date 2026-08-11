@@ -84,6 +84,43 @@ window.KC = window.KC || {};
     return Math.abs(v) / 6;   // mm³
   }
 
+  /* Decoration masks for one face, colour-separated and clipped to the plate.
+     The back face is mirrored so its artwork reads correctly once flipped. */
+  function faceMasks(state, which, g, plateSolid) {
+    var fs = KC.faceState(state, which);
+    if (!state.sides[which].enabled) {
+      return { border: null, text: null, art: null, all: null, raw: {} };
+    }
+
+    var plate = KC.plateMask(fs, g);
+    var border = KC.borderMask(fs, g, plate);
+    var text = KC.textMask(fs, g);
+    var art = KC.artMask(fs, g);
+
+    if (which === 'back') {
+      border = KC.mirrorMaskX(border, g);
+      text = KC.mirrorMaskX(text, g);
+      art = KC.mirrorMaskX(art, g);
+    }
+
+    var raw = { text: text, art: art };
+    if (border) border = KC.mask.and(border, plateSolid);
+    if (text) text = KC.mask.and(text, plateSolid);
+    if (art) art = KC.mask.and(art, plateSolid);
+
+    // Priority so colours never share a pixel: text > picture > border.
+    if (art && text) art = KC.mask.sub(art, text);
+    if (border && text) border = KC.mask.sub(border, text);
+    if (border && art) border = KC.mask.sub(border, art);
+
+    var all = null;
+    all = KC.mask.union(all, border);
+    all = KC.mask.union(all, art);
+    all = KC.mask.union(all, text);
+
+    return { border: border, text: text, art: art, all: all, raw: raw };
+  }
+
   /* ── the whole model ────────────────────────────────────────────── */
   KC.buildModel = function (state, ppmm) {
     var g = KC.makeGrid(state, ppmm);
@@ -101,63 +138,84 @@ window.KC = window.KC || {};
     var plateSolid = KC.mask.sub(plate, hole);
 
     // Raw element masks, each clipped to the plate.
-    var border = KC.borderMask(state, g, plate);
-    var text   = KC.textMask(state, g);
-    var art    = KC.artMask(state, g);
-
-    var textRaw = text, artRaw = art;
-    if (border) border = KC.mask.and(border, plateSolid);
-    if (text)   text   = KC.mask.and(text, plateSolid);
-    if (art)    art    = KC.mask.and(art, plateSolid);
-
-    // Priority so colours never share a pixel: text > picture > border.
-    if (art && text)    art    = KC.mask.sub(art, text);
-    if (border && text) border = KC.mask.sub(border, text);
-    if (border && art)  border = KC.mask.sub(border, art);
-
-    var features = null;
-    features = KC.mask.union(features, border);
-    features = KC.mask.union(features, art);
-    features = KC.mask.union(features, text);
-
     var pal = state.colors.palette;
     var parts = [];
-    var eps = 0.55 / g.ppmm;
-    var copts = { eps: eps, minArea: 0.03 };
-
+    var copts = { eps: 0.55 / g.ppmm, minArea: 0.03 };
     var relief = sh.relief;
-    var e = KC.clamp(sh.reliefHeight, 0.1, Math.max(0.1, T - 0.2));
-    if (relief !== 'inlay' && sh.reliefHeight > T - 0.2) {
-      warn.push({ level: 'warn', msg: 'Relief depth was clamped to ' + e.toFixed(1) +
-        ' mm so it stays thinner than the ' + T.toFixed(1) + ' mm plate.' });
+
+    /* Decoration for each face, independently configured. */
+    var F = { front: faceMasks(state, 'front', g, plateSolid),
+              back:  faceMasks(state, 'back',  g, plateSolid) };
+    var live = { front: !!F.front.all, back: !!F.back.all };
+
+    var rel = KC.reliefDepthOf(state);
+    var inl = KC.inlayDepthOf(state);
+
+    /* A through-cut is a single void passing clean through the plate, so only one
+       design can own it. If both faces are decorated we recess each into its own
+       surface instead — otherwise one face's artwork would show on the other. */
+    var through = relief === 'inlay' && inl.through;
+    var dualThrough = false;
+    if (through && live.front && live.back) { through = false; dualThrough = true; }
+    var cutFace = live.front ? 'front' : 'back';
+
+    /* How deep each side's detail goes. Two recessed faces must not meet in the
+       middle, so their combined depth is capped. */
+    var partial = KC.snapDepth(state, sh.inlayDepth, T);
+    var unit = relief === 'inlay' ? (through ? inl : partial) : rel;
+    var depth = { front: live.front ? unit.depth : 0, back: live.back ? unit.depth : 0 };
+
+    var eatsPlate = (relief === 'engraved') || (relief === 'inlay' && !through);
+    var squeezed = false;
+    if (eatsPlate && live.front && live.back) {
+      var room = T - (relief === 'engraved' ? KC.minDepthOf(state) : 0);
+      if (depth.front + depth.back > room) {
+        depth.front = depth.back = KC.snapDepth(state, 0, room / 2).depth;
+        squeezed = true;
+      }
     }
 
-    /* Base plate. */
+    /* Z extent of each face's detail bodies. */
+    var span = {
+      front: relief === 'raised' ? [T, T + depth.front] : [T - depth.front, T],
+      back:  relief === 'raised' ? [-depth.back, 0]     : [0, depth.back]
+    };
+    if (through) span[cutFace] = [0, T];
+
+    /* ── base plate, as a stack of z-bands ──────────────────────── */
     var baseAcc = new Acc('base', 'Keychain', state.colors.base, pal[state.colors.base]);
+    var minus = function (m) { return m ? KC.mask.sub(plateSolid, m) : plateSolid; };
+
     if (relief === 'raised') {
       baseAcc.addPolys(KC.contours(plateSolid, g, copts), 0, T);
-    } else if (relief === 'inlay') {
-      var cut = features ? KC.mask.sub(plateSolid, features) : plateSolid;
-      baseAcc.addPolys(KC.contours(cut, g, copts), 0, T);
-    } else { // engraved
-      baseAcc.addPolys(KC.contours(plateSolid, g, copts), 0, T - e);
-      var top = features ? KC.mask.sub(plateSolid, features) : plateSolid;
-      baseAcc.addPolys(KC.contours(top, g, copts), T - e, T);
+    } else if (through) {
+      baseAcc.addPolys(KC.contours(minus(F[cutFace].all), g, copts), 0, T);
+    } else {
+      // bottom recess (back), solid middle, top recess (front)
+      var lo = live.back ? depth.back : 0;
+      var hi = T - (live.front ? depth.front : 0);
+      if (lo > 1e-6) baseAcc.addPolys(KC.contours(minus(F.back.all), g, copts), 0, lo);
+      if (hi - lo > 1e-6) baseAcc.addPolys(KC.contours(plateSolid, g, copts), lo, hi);
+      if (T - hi > 1e-6) baseAcc.addPolys(KC.contours(minus(F.front.all), g, copts), hi, T);
     }
     if (baseAcc.idx.length) parts.push(baseAcc.finish());
 
-    /* Detail parts — omitted when engraved, since a recess has no body. */
+    /* ── detail bodies — a recess has no body, so engraving emits none ── */
     if (relief !== 'engraved') {
-      var fz0 = relief === 'raised' ? T : 0;
-      var fz1 = relief === 'raised' ? T + e : T;
-
-      [['border', 'Border', border, state.colors.border],
-       ['art', 'Picture', art, state.colors.art],
-       ['text', 'Text', text, state.colors.text]].forEach(function (row) {
-        if (!row[2] || KC.mask.empty(row[2])) return;
-        var acc = new Acc(row[0], row[1], row[3], pal[row[3]]);
-        acc.addPolys(KC.contours(row[2], g, copts), fz0, fz1);
-        if (acc.idx.length) parts.push(acc.finish());
+      // A through-cut belongs to the one decorated face; otherwise each face has
+      // its own bodies.
+      (through ? [cutFace] : ['front', 'back']).forEach(function (which) {
+        if (!live[which]) return;
+        var m = F[which], z = span[which];
+        [['border', 'Border', m.border, state.colors.border],
+         ['art', 'Picture', m.art, state.colors.art],
+         ['text', 'Text', m.text, state.colors.text]].forEach(function (row) {
+          if (!row[2] || KC.mask.empty(row[2])) return;
+          var label = row[1] + (live.front && live.back ? ' (' + which + ')' : '');
+          var acc = new Acc(row[0] + '-' + which, label, row[3], pal[row[3]]);
+          acc.addPolys(KC.contours(row[2], g, copts), z[0], z[1]);
+          if (acc.idx.length) parts.push(acc.finish());
+        });
       });
     }
 
@@ -170,7 +228,9 @@ window.KC = window.KC || {};
     }
 
     var sz = KC.plateSize(state);
-    var height = relief === 'raised' ? T + e : T;
+    var totalUp = relief === 'raised' && live.front ? depth.front : 0;
+    var totalDown = relief === 'raised' && live.back ? depth.back : 0;
+    var height = T + totalUp + totalDown;
 
     /* ── printability checks ────────────────────────────────────── */
     if (!state.hole.enabled) {
@@ -178,43 +238,78 @@ window.KC = window.KC || {};
     } else {
       var hc = KC.holeCentre(state);
       var wall = KC.mask.and(plate, discMask(state, g, hc, hc.r + 1.2));
-      var ideal = Math.PI * (Math.pow(hc.r + 1.2, 2) - hc.r * hc.r) + Math.PI * hc.r * hc.r;
+      var ideal = Math.PI * Math.pow(hc.r + 1.2, 2);
       if (KC.mask.area(wall, g) < ideal * 0.93) {
         warn.push({ level: 'bad', msg: 'The keyring hole breaks the edge of the plate. Reduce its diameter or increase the edge margin.' });
       }
     }
 
-    if (features) {
-      var thin = KC.maxInscribed(features, g) * 2;
+    if (!live.front && !live.back) {
+      warn.push({ level: 'warn', msg: 'Both faces are blank — the keychain is a plain plate.' });
+    }
+
+    ['front', 'back'].forEach(function (which) {
+      if (!live[which]) return;
+      var m = F[which], tag = (live.front && live.back) ? ' on the ' + which : '';
+
+      var thin = KC.maxInscribed(m.all, g) * 2;
       if (thin > 0 && thin < 0.8) {
-        warn.push({ level: 'warn', msg: 'Thinnest detail is about ' + thin.toFixed(2) +
+        warn.push({ level: 'warn', msg: 'Thinnest detail' + tag + ' is about ' + thin.toFixed(2) +
           ' mm wide — under two 0.4 mm extrusion widths, so it may print poorly. Try a bolder font or a thicker border.' });
       }
-    }
 
-    if (textRaw && !KC.mask.empty(textRaw) && (!text || KC.mask.empty(text))) {
-      warn.push({ level: 'bad', msg: 'The text sits entirely off the plate.' });
-    } else if (textRaw && text && KC.mask.area(text, g) < KC.mask.area(textRaw, g) * 0.97) {
-      warn.push({ level: 'warn', msg: 'Some of the text is clipped by the plate edge or the keyring hole.' });
-    }
+      var face = state.sides[which];
+      var tr = m.raw.text, ar = m.raw.art;
+      if (tr && !KC.mask.empty(tr) && (!m.text || KC.mask.empty(m.text))) {
+        warn.push({ level: 'bad', msg: 'The text' + tag + ' sits entirely off the plate.' });
+      } else if (tr && m.text && KC.mask.area(m.text, g) < KC.mask.area(tr, g) * 0.97) {
+        warn.push({ level: 'warn', msg: 'Some of the text' + tag + ' is clipped by the plate edge or the keyring hole.' });
+      }
+      if (ar && !KC.mask.empty(ar) && (!m.art || KC.mask.empty(m.art))) {
+        warn.push({ level: 'bad', msg: 'The picture' + tag + ' sits entirely off the plate.' });
+      }
+      if ((face.text.content || '').trim() && (!tr || KC.mask.empty(tr))) {
+        warn.push({ level: 'warn', msg: 'Text' + tag + ' is too small to render at this size.' });
+      }
+    });
 
-    if (artRaw && !KC.mask.empty(artRaw) && (!art || KC.mask.empty(art))) {
-      warn.push({ level: 'bad', msg: 'The picture sits entirely off the plate.' });
-    }
-
-    if ((state.text.content || '').trim() && (!textRaw || KC.mask.empty(textRaw))) {
-      warn.push({ level: 'warn', msg: 'Text is too small to render at this size.' });
-    }
-
+    /* Depth / layer checks. */
+    var min = KC.minDepthOf(state), lh = KC.layerHeightOf(state);
     if (relief === 'inlay') {
-      var used = {};
-      parts.forEach(function (p) { used[p.colorIndex] = 1; });
-      if (Object.keys(used).length > 1) {
-        warn.push({ level: 'ok', msg: 'Inlay mode cuts details clean through the plate — needs a multi-material printer (AMS / MMU) or a manual filament swap.' });
+      if (dualThrough) {
+        warn.push({ level: 'warn', msg: 'Both faces are decorated, so the inlay is recessed ' +
+          depth.front.toFixed(1) + ' mm into each surface rather than cut through — a single ' +
+          'through-cut can only carry one design. Turn one face off to cut all the way through.' });
+      }
+      if (inl.tooThin) {
+        warn.push({ level: 'bad', msg: 'The plate is only ' + T.toFixed(1) + ' mm, so the inlay is ' +
+          inl.layers + ' layer' + (inl.layers === 1 ? '' : 's') + ' deep at ' + lh.toFixed(2) +
+          ' mm. Colour needs at least ' + KC.MIN_LAYERS + ' layers (' + min.toFixed(1) +
+          ' mm) to look solid — increase the thickness.' });
+      } else if (countColors(parts) > 1) {
+        warn.push({ level: 'ok', msg: 'Inlay is ' + depth.front.toFixed(1) + ' mm — ' +
+          Math.round(depth.front / lh) + ' layers at ' + lh.toFixed(2) + ' mm' +
+          (through ? ', cut all the way through' : ', recessed into the face') +
+          '. Needs a multi-material printer (AMS / MMU) or a manual filament swap.' });
+      }
+    } else if (relief === 'raised' || relief === 'engraved') {
+      if (rel.tooThin) {
+        warn.push({ level: 'bad', msg: 'Relief depth is only ' + rel.layers + ' layer' +
+          (rel.layers === 1 ? '' : 's') + ' at ' + lh.toFixed(2) + ' mm. Detail needs at least ' +
+          KC.MIN_LAYERS + ' layers (' + min.toFixed(1) + ' mm) to read cleanly.' });
+      } else if (Math.abs(rel.depth - sh.reliefHeight) > lh * 0.5) {
+        warn.push({ level: 'ok', msg: 'Relief depth snapped to ' + rel.depth.toFixed(2) + ' mm — ' +
+          rel.layers + ' whole layers at ' + lh.toFixed(2) + ' mm.' });
       }
     }
-    if (T < 1.2) {
-      warn.push({ level: 'warn', msg: 'A ' + T.toFixed(1) + ' mm plate is quite flexible; 1.5–3 mm is a good range for keychains.' });
+    if (squeezed) {
+      warn.push({ level: 'warn', msg: 'Both faces are ' +
+        (relief === 'engraved' ? 'engraved' : 'inlaid') + ', so each was limited to ' +
+        depth.front.toFixed(1) + ' mm to leave material in between. A thicker plate gives more room.' });
+    }
+    if (T < min * 2) {
+      warn.push({ level: 'warn', msg: 'A ' + T.toFixed(1) + ' mm plate is quite flexible; ' +
+        '1.5–3 mm is a good range for keychains.' });
     }
 
     return {

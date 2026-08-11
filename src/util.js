@@ -36,18 +36,32 @@ window.KC = window.KC || {};
     ['base', 'Keychain'], ['border', 'Border'], ['text', 'Text'], ['art', 'Picture']
   ];
 
+  /* One face's worth of decoration. Both sides of the keychain hold one of
+     these, edited independently. */
+  KC.faceDefaults = function (which) {
+    return {
+      enabled: which === 'front',
+      border: { style: 'single', shape: 'follow', inset: 2, width: 1.2, gap: 1.2,
+                dashes: 24, radius: 4 },
+      text:   { content: which === 'front' ? 'HELLO' : '', font: 0, bold: true,
+                italic: false, style: 'fill', strokeWidth: 0.8, size: 8, tracking: 0.4,
+                lineHeight: 1.15, rotation: 0, align: 'center', x: 0, y: 0 },
+      art:    { source: 'none', mode: 'auto', threshold: 0.5, size: 15, rotation: 0,
+                mirror: false, x: -17, y: 0 }
+    };
+  };
+
   KC.defaults = function () {
     return {
       shape:  { preset: 'rect', width: 58, height: 30, radius: 6, thickness: 3,
-                relief: 'raised', reliefHeight: 0.8 },
-      hole:   { enabled: true, diameter: 4, margin: 4, position: 'tl' },
-      border: { style: 'single', shape: 'follow', inset: 2, width: 1.2, gap: 1.2,
-                dashes: 24, radius: 4 },
-      text:   { content: 'HELLO', font: 0, bold: true, italic: false, style: 'fill',
-                strokeWidth: 0.8, size: 8, tracking: 0.4, lineHeight: 1.15, rotation: 0,
-                align: 'center', x: 0, y: 0 },
-      art:    { source: 'none', mode: 'auto', threshold: 0.5, size: 15, rotation: 0,
-                mirror: false, x: -17, y: 0 },
+                relief: 'raised', reliefHeight: 0.6,
+                // Recessed by default: a through cut shows on both faces, which
+                // is surprising when only one face is decorated.
+                inlayThrough: false, inlayDepth: 1.2 },
+      layerHeight: 0.2,
+      hole:   { enabled: true, diameter: 4, margin: 4, position: 'tl', x: 0, y: 0 },
+      sides:  { front: KC.faceDefaults('front'), back: KC.faceDefaults('back') },
+      activeSide: 'front',
       colors: { palette: ['#e9edf2', '#16181d', '#e0a63a', '#4b8ef0'],
                 base: 0, border: 1, text: 1, art: 2 },
       quality: 14,
@@ -55,8 +69,27 @@ window.KC = window.KC || {};
     };
   };
 
-  /* Bitmaps live outside the serialisable state. */
-  KC.assets = { image: null, drawing: null, customShape: null };
+  /* Bitmaps live outside the serialisable state. The plate outline is shared;
+     pictures and doodles belong to one face. */
+  KC.assets = {
+    customShape: null,
+    front: { image: null, drawing: null },
+    back:  { image: null, drawing: null }
+  };
+
+  /* A state-shaped view of one face: `shape`, `hole` and `colors` fall through
+     to the real state, while `text`/`art`/`border` come from that side. Lets
+     every rasteriser stay face-agnostic. */
+  KC.faceState = function (state, which) {
+    var f = state.sides[which];
+    var v = Object.create(state);
+    v.border = f.border;
+    v.text = f.text;
+    v.art = f.art;
+    v._assets = KC.assets[which];
+    v._side = which;
+    return v;
+  };
 
   /* ── tiny helpers ───────────────────────────────────────────────── */
   KC.clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
@@ -114,6 +147,73 @@ window.KC = window.KC || {};
       mmx: function (px) { return (px - this.ox) / this.ppmm; },
       mmy: function (py) { return (this.oy - py) / this.ppmm; }
     };
+  };
+
+  /* Anything that carries colour needs real depth to read as solid: one or two
+     layers is translucent and fragile, so 3 is the floor everywhere — raised
+     text, engraved recesses and colour inlays alike. Depths snap up to whole
+     layers so they land on slice boundaries. */
+  KC.MIN_LAYERS = 3;
+  KC.MIN_INLAY_LAYERS = KC.MIN_LAYERS;   // kept for readability at call sites
+
+  KC.layerHeightOf = function (state) { return Math.max(0.02, state.layerHeight || 0.2); };
+
+  /* Layer arithmetic is done in floats, where 3 * 0.2 is 0.6000000000000001.
+     Rounding keeps that noise out of state and off the sliders. */
+  function tidy(v) { return Math.round(v * 1e6) / 1e6; }
+  KC.tidyDepth = tidy;
+  KC.minDepthOf = function (state) { return tidy(KC.MIN_LAYERS * KC.layerHeightOf(state)); };
+
+  /* Snap `requested` up to a whole number of layers, never below the 3-layer
+     floor and never past `maxDepth` (which is itself rounded down to layers). */
+  KC.snapDepth = function (state, requested, maxDepth) {
+    var lh = KC.layerHeightOf(state);
+    var floor = tidy(KC.MIN_LAYERS * lh);
+    var d = tidy(Math.ceil(Math.max(floor, requested) / lh - 1e-6) * lh);
+    if (maxDepth != null && d > maxDepth) d = tidy(Math.floor(maxDepth / lh + 1e-6) * lh);
+    if (d < 0) d = 0;
+    return { depth: d, floor: floor, lh: lh, layers: Math.round(d / lh),
+             tooThin: d < floor - 1e-6 };
+  };
+
+  /* Depth of raised/engraved detail. Engraving must leave the floor's worth of
+     plate underneath, so it can't eat the whole thickness. */
+  KC.reliefDepthOf = function (state) {
+    var T = state.shape.thickness;
+    var max = state.shape.relief === 'engraved' ? T - KC.minDepthOf(state) : null;
+    var r = KC.snapDepth(state, state.shape.reliefHeight, max);
+    r.through = false;
+    return r;
+  };
+
+  KC.inlayDepthOf = function (state) {
+    var T = state.shape.thickness;
+    var lh = KC.layerHeightOf(state);
+
+    /* A through cut is defined by the plate, not by layer boundaries — snapping
+       it would quietly leave a floor behind on any thickness that isn't a whole
+       number of layers (2.5 mm at 0.2 mm, say). */
+    if (state.shape.inlayThrough) {
+      return { depth: T, floor: KC.minDepthOf(state), lh: lh,
+               layers: Math.round(T / lh), through: true,
+               tooThin: T < KC.minDepthOf(state) - 1e-6 };
+    }
+
+    var r = KC.snapDepth(state, state.shape.inlayDepth, T);
+    r.through = false;
+    return r;
+  };
+
+  /* Mirror a mask about the plate's vertical centre line — how the back face is
+     turned around so its text reads the right way when you flip the keychain. */
+  KC.mirrorMaskX = function (m, g) {
+    if (!m) return null;
+    var out = new Float32Array(m.length);
+    for (var y = 0; y < g.rows; y++) {
+      var row = y * g.cols, last = row + g.cols - 1;
+      for (var x = 0; x < g.cols; x++) out[row + x] = m[last - x];
+    }
+    return out;
   };
 
   /* Effective plate size honouring the "locked" presets. */

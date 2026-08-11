@@ -1,5 +1,12 @@
 .DS_Store
 node_modules/
+
+# Dot-folders stay local
+.*/
+# …but un-ignore any you do want committed, e.g.:
+# !.github/
+
+# Exported artefacts and saved designs
 *.3mf
 *.stl
 *.keychain.json

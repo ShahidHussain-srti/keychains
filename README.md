@@ -21,9 +21,16 @@ Click text, picture or hole in the Layout view to select; drag or arrow-key to m
 
 ## Printing
 
-Import the `.3mf` into PrusaSlicer, OrcaSlicer, Bambu Studio or Cura — bodies arrive
-pre-aligned as one object with colours attached, ready to map to extruders. Every body
-is watertight with outward normals. **STL** exports a single-colour mesh instead.
+Import the `.3mf` into PrusaSlicer, OrcaSlicer, Bambu Studio or Creality Print. It
+arrives as one object whose parts are already assigned to extruders 1–4, matching the
+palette slots. Every part is independently watertight with outward normals.
+**STL** exports a single-colour mesh instead.
+
+Colour needs a multi-material printer (AMS / CFS / MMU) or manual filament swaps — on a
+single-extruder machine the slicer will show and print one colour no matter what the
+file says. The extruder assignment is written three ways (`basematerials` plus
+`Slic3r_PE_model.config` and `model_settings.config`) because slicers disagree about
+where to look; core 3MF materials on their own import as a single colour.
 
 Set **layer height** to match your slicer: every thickness is a whole multiple of it and
 at least 3 layers, so nothing asks for a partial layer.

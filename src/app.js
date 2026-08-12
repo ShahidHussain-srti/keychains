@@ -26,12 +26,18 @@
       bs.appendChild(o);
     });
 
-    var fs = $('#font-select');
-    KC.FONTS.forEach(function (f, i) {
+    var fs = $('#font-select'), groups = {};
+    KC.FONTS.forEach(function (f) {
+      var g = groups[f.group];
+      if (!g) {
+        g = groups[f.group] = document.createElement('optgroup');
+        g.label = f.group;
+        fs.appendChild(g);
+      }
       var o = document.createElement('option');
-      o.value = i; o.textContent = f.name;
+      o.value = f.key; o.textContent = f.name;
       o.style.fontFamily = f.css;      // preview the face in the dropdown
-      fs.appendChild(o);
+      g.appendChild(o);
     });
 
     var sw = $('#swatches');
@@ -780,6 +786,10 @@
         } else { dst[k] = src[k]; }
       });
     })(d, ps);
+
+    ['front', 'back'].forEach(function (w) {
+      d.sides[w].text.font = KC.fontKey(d.sides[w].text.font);
+    });
 
     Object.keys(state).forEach(function (k) { if (!(k in d)) delete state[k]; });
     Object.keys(d).forEach(function (k) { state[k] = d[k]; });

@@ -63,29 +63,6 @@
           <input id="f-shape-thickness" type="range" data-bind="shape.thickness" min="0.6" max="5" step="0.1">
         </div>
         <div class="row">
-          <span class="lbl">Relief style</span>
-          <div class="seg" role="group" aria-label="Relief style" data-bind="shape.relief">
-            <button value="raised">Raised</button>
-            <button value="inlay">Inlay</button>
-            <button value="engraved">Engraved</button>
-          </div>
-        </div>
-        <p class="hint" data-show="shape.relief:raised">Details sit proudly on top of the plate. Prints in one colour on a single-extruder machine, or in full colour with an AMS/MMU.</p>
-        <p class="hint" data-show="shape.relief:inlay">Details are filled with their own colour, flush with the surface. Needs a multi-material printer.</p>
-        <p class="hint" data-show="shape.relief:engraved">Details are recessed into the plate. Single colour, no multi-material needed.</p>
-        <div class="row" data-hide="shape.relief:inlay">
-          <label for="f-shape-reliefHeight">Relief depth <b data-val="shape.reliefHeight"></b></label>
-          <input id="f-shape-reliefHeight" type="range" data-bind="shape.reliefHeight" min="0.6" max="3" step="0.2">
-        </div>
-        <div class="row inlinerow" data-show="shape.relief:inlay">
-          <label class="chk" title="A cut through the plate is visible from both faces"><input type="checkbox" data-bind="shape.inlayThrough"> Cut all the way through <span class="warnish">(shows on both faces)</span></label>
-        </div>
-        <div class="row" data-show="shape.relief:inlay" data-hide="shape.inlayThrough:true">
-          <label for="f-shape-inlayDepth">Inlay depth <b data-val="shape.inlayDepth"></b></label>
-          <input id="f-shape-inlayDepth" type="range" data-bind="shape.inlayDepth" min="0.6" max="5" step="0.2">
-        </div>
-        <p class="hint" data-show="shape.relief:inlay"><b id="inlay-layers"></b></p>
-        <div class="row">
           <label for="f-layerHeight">Layer height <b data-val="layerHeight"></b></label>
           <input id="f-layerHeight" type="range" data-bind="layerHeight" min="0.08" max="0.4" step="0.02">
         </div>
@@ -148,6 +125,29 @@
         <div class="row">
           <button class="ghost wide" id="btn-clear-side">Turn off the other side</button>
         </div>
+        <div class="row">
+          <span class="lbl">Relief style</span>
+          <div class="seg" role="group" aria-label="Relief style" data-bind="~.relief">
+            <button value="raised">Raised</button>
+            <button value="inlay">Inlay</button>
+            <button value="engraved">Engraved</button>
+          </div>
+        </div>
+        <p class="hint" data-show="~.relief:raised">Details sit proudly on top of the plate. Prints in one colour on a single-extruder machine, or in full colour with an AMS/MMU.</p>
+        <p class="hint" data-show="~.relief:inlay">Details are filled with their own colour, flush with the surface. Needs a multi-material printer.</p>
+        <p class="hint" data-show="~.relief:engraved">Details are recessed into the plate. Single colour, no multi-material needed.</p>
+        <div class="row" data-hide="~.relief:inlay">
+          <label for="f-reliefHeight">Relief depth <b data-val="~.reliefHeight"></b></label>
+          <input id="f-reliefHeight" type="range" data-bind="~.reliefHeight" min="0.6" max="3" step="0.2">
+        </div>
+        <div class="row inlinerow" data-show="~.relief:inlay">
+          <label class="chk" title="A cut through the plate is visible from both faces"><input type="checkbox" data-bind="~.inlayThrough"> Cut all the way through <span class="warnish">(shows on both faces)</span></label>
+        </div>
+        <div class="row" data-show="~.relief:inlay" data-hide="~.inlayThrough:true">
+          <label for="f-inlayDepth">Inlay depth <b data-val="~.inlayDepth"></b></label>
+          <input id="f-inlayDepth" type="range" data-bind="~.inlayDepth" min="0.6" max="5" step="0.2">
+        </div>
+        <p class="hint" data-show="~.relief:inlay"><b id="inlay-layers"></b></p>
         <p class="hint" id="side-hint"></p>
       </div>
     </section>

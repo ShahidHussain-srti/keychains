@@ -141,83 +141,104 @@ window.KC = window.KC || {};
     var pal = state.colors.palette;
     var parts = [];
     var copts = { eps: 0.55 / g.ppmm, minArea: 0.03 };
-    var relief = sh.relief;
 
-    /* Decoration for each face, independently configured. */
+    /* Decoration and relief style are both per face now. */
     var F = { front: faceMasks(state, 'front', g, plateSolid),
               back:  faceMasks(state, 'back',  g, plateSolid) };
     var live = { front: !!F.front.all, back: !!F.back.all };
+    var FS = { front: KC.faceState(state, 'front'), back: KC.faceState(state, 'back') };
+    var R = { front: KC.faceRelief(FS.front), back: KC.faceRelief(FS.back) };
 
-    var rel = KC.reliefDepthOf(state);
-    var inl = KC.inlayDepthOf(state);
-
-    /* A through-cut is a single void passing clean through the plate, so only one
-       design can own it. If both faces are decorated we recess each into its own
-       surface instead — otherwise one face's artwork would show on the other. */
-    var through = relief === 'inlay' && inl.through;
+    /* A through cut is one void through the plate, so only one design can own
+       it; the second face falls back to a recess. Its depth has to be derived
+       from the face's own inlayDepth — the through reading is the full
+       thickness, which would recess the entire plate. */
     var dualThrough = false;
-    if (through && live.front && live.back) { through = false; dualThrough = true; }
-    var cutFace = live.front ? 'front' : 'back';
+    if (live.front && live.back && R.front.through && R.back.through) {
+      var partial = KC.snapDepth(FS.back, FS.back.inlayDepth, T);
+      R.back = { style: 'inlay', depth: partial.depth, cut: partial.depth,
+                 through: false, rel: R.back.rel, inl: partial };
+      dualThrough = true;
+    }
 
-    /* How deep each side's detail goes. Two recessed faces must not meet in the
-       middle, so their combined depth is capped. */
-    var partial = KC.snapDepth(state, sh.inlayDepth, T);
-    var unit = relief === 'inlay' ? (through ? inl : partial) : rel;
-    var depth = { front: live.front ? unit.depth : 0, back: live.back ? unit.depth : 0 };
+    /* A through cut owns its column of the plate from face to face, so the other
+       side has nothing left to recess into there. Clip the other face's artwork
+       out of that region, or the two bodies would occupy the same space. */
+    ['front', 'back'].forEach(function (w) {
+      var o = w === 'front' ? 'back' : 'front';
+      if (!(live[w] && R[w].through && live[o])) return;
+      ['border', 'text', 'art', 'all'].forEach(function (k) {
+        if (F[o][k]) F[o][k] = KC.mask.sub(F[o][k], F[w].all);
+      });
+      if (!F[o].all || KC.mask.empty(F[o].all)) live[o] = false;
+    });
 
-    var eatsPlate = (relief === 'engraved') || (relief === 'inlay' && !through);
+    var cut = { front: live.front ? R.front.cut : 0, back: live.back ? R.back.cut : 0 };
+
+    /* Two faces cutting inwards must leave material between them. */
     var squeezed = false;
-    if (eatsPlate && live.front && live.back) {
-      var room = T - (relief === 'engraved' ? KC.minDepthOf(state) : 0);
-      if (depth.front + depth.back > room) {
-        depth.front = depth.back = KC.snapDepth(state, 0, room / 2).depth;
+    var eats = function (w) { return live[w] && cut[w] > 0 && !R[w].through; };
+    if (eats('front') && eats('back')) {
+      var keep = (R.front.style === 'engraved' || R.back.style === 'engraved')
+        ? KC.minDepthOf(state) : 0;
+      if (cut.front + cut.back > T - keep) {
+        var each = KC.snapDepth(state, 0, (T - keep) / 2).depth;
+        cut.front = Math.min(cut.front, each);
+        cut.back = Math.min(cut.back, each);
         squeezed = true;
       }
     }
 
-    /* Z extent of each face's detail bodies. */
-    var span = {
-      front: relief === 'raised' ? [T, T + depth.front] : [T - depth.front, T],
-      back:  relief === 'raised' ? [-depth.back, 0]     : [0, depth.back]
-    };
-    if (through) span[cutFace] = [0, T];
+    /* Where each face's coloured body sits, and which slab of plate it removes. */
+    var span = {}, remove = [];
+    ['front', 'back'].forEach(function (w) {
+      if (!live[w]) return;
+      var r = R[w], d = r.depth, c = cut[w];
+      if (r.style === 'raised') {
+        span[w] = w === 'front' ? [T, T + d] : [-d, 0];
+      } else if (r.through) {
+        span[w] = [0, T];
+        remove.push({ lo: 0, hi: T, mask: F[w].all });
+      } else {
+        span[w] = w === 'front' ? [T - c, T] : [0, c];
+        remove.push({ lo: span[w][0], hi: span[w][1], mask: F[w].all });
+        if (r.style === 'engraved') delete span[w];      // a recess has no body
+      }
+    });
 
-    /* ── base plate, as a stack of z-bands ──────────────────────── */
+    /* ── base plate, as bands between every z where something changes ── */
     var baseAcc = new Acc('base', 'Keychain', state.colors.base, pal[state.colors.base]);
-    var minus = function (m) { return m ? KC.mask.sub(plateSolid, m) : plateSolid; };
+    var cuts = [0, T];
+    remove.forEach(function (r) { cuts.push(r.lo, r.hi); });
+    cuts = cuts.filter(function (z) { return z >= -1e-9 && z <= T + 1e-9; })
+               .sort(function (a, b) { return a - b; })
+               .filter(function (z, i, a) { return i === 0 || z - a[i - 1] > 1e-6; });
 
-    if (relief === 'raised') {
-      baseAcc.addPolys(KC.contours(plateSolid, g, copts), 0, T);
-    } else if (through) {
-      baseAcc.addPolys(KC.contours(minus(F[cutFace].all), g, copts), 0, T);
-    } else {
-      // bottom recess (back), solid middle, top recess (front)
-      var lo = live.back ? depth.back : 0;
-      var hi = T - (live.front ? depth.front : 0);
-      if (lo > 1e-6) baseAcc.addPolys(KC.contours(minus(F.back.all), g, copts), 0, lo);
-      if (hi - lo > 1e-6) baseAcc.addPolys(KC.contours(plateSolid, g, copts), lo, hi);
-      if (T - hi > 1e-6) baseAcc.addPolys(KC.contours(minus(F.front.all), g, copts), hi, T);
+    for (var bi = 0; bi < cuts.length - 1; bi++) {
+      var lo = cuts[bi], hi = cuts[bi + 1];
+      if (hi - lo < 1e-6) continue;
+      var mid = (lo + hi) / 2, m = plateSolid;
+      remove.forEach(function (r) {
+        if (mid > r.lo + 1e-9 && mid < r.hi - 1e-9) m = KC.mask.sub(m, r.mask);
+      });
+      baseAcc.addPolys(KC.contours(m, g, copts), lo, hi);
     }
     if (baseAcc.idx.length) parts.push(baseAcc.finish());
 
-    /* ── detail bodies — a recess has no body, so engraving emits none ── */
-    if (relief !== 'engraved') {
-      // A through-cut belongs to the one decorated face; otherwise each face has
-      // its own bodies.
-      (through ? [cutFace] : ['front', 'back']).forEach(function (which) {
-        if (!live[which]) return;
-        var m = F[which], z = span[which];
-        [['border', 'Border', m.border, state.colors.border],
-         ['art', 'Picture', m.art, state.colors.art],
-         ['text', 'Text', m.text, state.colors.text]].forEach(function (row) {
-          if (!row[2] || KC.mask.empty(row[2])) return;
-          var label = row[1] + (live.front && live.back ? ' (' + which + ')' : '');
-          var acc = new Acc(row[0] + '-' + which, label, row[3], pal[row[3]]);
-          acc.addPolys(KC.contours(row[2], g, copts), z[0], z[1]);
-          if (acc.idx.length) parts.push(acc.finish());
-        });
+    /* ── coloured detail bodies ─────────────────────────────────────── */
+    ['front', 'back'].forEach(function (w) {
+      if (!live[w] || !span[w]) return;
+      var m2 = F[w], z = span[w];
+      [['border', 'Border', m2.border, state.colors.border],
+       ['art', 'Picture', m2.art, state.colors.art],
+       ['text', 'Text', m2.text, state.colors.text]].forEach(function (row) {
+        if (!row[2] || KC.mask.empty(row[2])) return;
+        var label = row[1] + (live.front && live.back ? ' (' + w + ')' : '');
+        var acc = new Acc(row[0] + '-' + w, label, row[3], pal[row[3]]);
+        acc.addPolys(KC.contours(row[2], g, copts), z[0], z[1]);
+        if (acc.idx.length) parts.push(acc.finish());
       });
-    }
+    });
 
     /* ── stats ──────────────────────────────────────────────────── */
     var tris = 0, vol = 0;
@@ -228,9 +249,9 @@ window.KC = window.KC || {};
     }
 
     var sz = KC.plateSize(state);
-    var totalUp = relief === 'raised' && live.front ? depth.front : 0;
-    var totalDown = relief === 'raised' && live.back ? depth.back : 0;
-    var height = T + totalUp + totalDown;
+    var up   = (live.front && R.front.style === 'raised') ? R.front.depth : 0;
+    var down = (live.back  && R.back.style  === 'raised') ? R.back.depth  : 0;
+    var height = T + up + down;
 
     /* ── printability checks ────────────────────────────────────── */
     if (!state.hole.enabled) {
@@ -273,59 +294,63 @@ window.KC = window.KC || {};
       }
     });
 
-    /* Depth / layer checks. */
+    /* Depth / layer checks, per face. */
     var min = KC.minDepthOf(state), lh = KC.layerHeightOf(state);
-    if (relief === 'inlay') {
-      if (dualThrough) {
-        warn.push({ level: 'warn', msg: 'Both faces are decorated, so the inlay is recessed ' +
-          depth.front.toFixed(1) + ' mm into each surface rather than cut through — a single ' +
-          'through-cut can only carry one design. Turn one face off to cut all the way through.' });
-      }
-      if (inl.tooThin) {
-        warn.push({ level: 'bad', msg: 'The plate is only ' + T.toFixed(1) + ' mm, so the inlay is ' +
-          inl.layers + ' layer' + (inl.layers === 1 ? '' : 's') + ' deep at ' + lh.toFixed(2) +
-          ' mm. Colour needs at least ' + KC.MIN_LAYERS + ' layers (' + min.toFixed(1) +
-          ' mm) to look solid — increase the thickness.' });
-      } else if (countColors(parts) > 1) {
-        warn.push({ level: 'ok', msg: 'Inlay is ' + depth.front.toFixed(1) + ' mm — ' +
-          Math.round(depth.front / lh) + ' layers at ' + lh.toFixed(2) + ' mm' +
-          (through ? ', cut all the way through' : ', recessed into the face') +
-          '. Needs a multi-material printer (AMS / MMU) or a manual filament swap.' });
-      }
-    } else if (relief === 'raised' || relief === 'engraved') {
-      if (rel.tooThin) {
-        warn.push({ level: 'bad', msg: 'Relief depth is only ' + rel.layers + ' layer' +
-          (rel.layers === 1 ? '' : 's') + ' at ' + lh.toFixed(2) + ' mm. Detail needs at least ' +
-          KC.MIN_LAYERS + ' layers (' + min.toFixed(1) + ' mm) to read cleanly.' });
-      } else if (Math.abs(rel.depth - sh.reliefHeight) > lh * 0.5) {
-        warn.push({ level: 'ok', msg: 'Relief depth snapped to ' + rel.depth.toFixed(2) + ' mm — ' +
-          rel.layers + ' whole layers at ' + lh.toFixed(2) + ' mm.' });
-      }
+
+    if (dualThrough) {
+      warn.push({ level: 'warn', msg: 'Both faces asked to cut all the way through, but a ' +
+        'through cut is a single void that can only carry one design — the back was ' +
+        'recessed ' + cut.back.toFixed(1) + ' mm into its own surface instead.' });
     }
-    /* A single-extruder machine maps every part to extruder 1, so the print
-       preview comes out one colour no matter what the file says. Raised relief
-       puts each colour in its own band of layers, so a filament change at the
-       right layer gets you the colours by hand. */
-    if (relief === 'raised' && countColors(parts) > 1) {
-      var lay = function (z) { return Math.round(z / lh) + 1; };
-      var stops = [];
-      if (live.back && depth.back > 0) {
-        stops.push('layer ' + lay(depth.back) + ' (Z ' + depth.back.toFixed(1) + ' mm) for the plate');
-        stops.push('layer ' + lay(depth.back + T) + ' (Z ' + (depth.back + T).toFixed(1) +
-                   ' mm) for the front detail');
-      } else {
-        stops.push('layer ' + lay(T) + ' (Z ' + T.toFixed(1) + ' mm) for the detail');
-      }
-      warn.push({ level: 'ok', msg: 'Single extruder? Every thickness here is a whole ' +
-        'number of ' + lh.toFixed(2) + ' mm layers, so a filament change at ' +
-        stops.join(', then ') + ' gives the same result by hand.' });
+    if (squeezed) {
+      warn.push({ level: 'warn', msg: 'Both faces cut into the plate, so each was limited to ' +
+        cut.front.toFixed(1) + ' mm to leave material in between. A thicker plate gives more room.' });
     }
 
-    if (squeezed) {
-      warn.push({ level: 'warn', msg: 'Both faces are ' +
-        (relief === 'engraved' ? 'engraved' : 'inlaid') + ', so each was limited to ' +
-        depth.front.toFixed(1) + ' mm to leave material in between. A thicker plate gives more room.' });
+    ['front', 'back'].forEach(function (w) {
+      if (!live[w]) return;
+      var r = R[w], tag = (live.front && live.back) ? ' on the ' + w : '';
+      var layers = Math.round(r.depth / lh);
+
+      if (r.style === 'inlay') {
+        if (r.inl.tooThin) {
+          warn.push({ level: 'bad', msg: 'The inlay' + tag + ' is only ' + layers + ' layer' +
+            (layers === 1 ? '' : 's') + ' deep at ' + lh.toFixed(2) + ' mm. Colour needs at ' +
+            'least ' + KC.MIN_LAYERS + ' layers (' + min.toFixed(1) + ' mm) to look solid.' });
+        }
+      } else if (r.rel.tooThin) {
+        warn.push({ level: 'bad', msg: 'Relief depth' + tag + ' is only ' + layers + ' layer' +
+          (layers === 1 ? '' : 's') + ' at ' + lh.toFixed(2) + ' mm. Detail needs at least ' +
+          KC.MIN_LAYERS + ' layers (' + min.toFixed(1) + ' mm) to read cleanly.' });
+      }
+    });
+
+    if (countColors(parts) > 1) {
+      var styles = ['front', 'back'].filter(function (w) { return live[w]; })
+        .map(function (w) { return w + ' ' + R[w].style + (R[w].through ? ' (through)' : ''); });
+      warn.push({ level: 'ok', msg: 'Colour needs a multi-material printer (AMS / CFS / MMU) — ' +
+        styles.join(', ') + '.' });
     }
+
+    /* A single-extruder machine maps every part to extruder 1, so the print
+       preview comes out one colour. Raised relief puts each colour in its own
+       band of layers, so a filament change at the right layer does it by hand. */
+    var raisedFront = live.front && R.front.style === 'raised';
+    var raisedBack = live.back && R.back.style === 'raised';
+    if (countColors(parts) > 1 && (raisedFront || raisedBack)) {
+      var atLayer = function (z) { return Math.round(z / lh) + 1; };
+      var base0 = raisedBack ? R.back.depth : 0;
+      var stops = [];
+      if (raisedBack) stops.push('layer ' + atLayer(base0) + ' (Z ' + base0.toFixed(1) + ' mm) for the plate');
+      if (raisedFront) stops.push('layer ' + atLayer(base0 + T) + ' (Z ' + (base0 + T).toFixed(1) +
+                                  ' mm) for the front detail');
+      if (stops.length) {
+        warn.push({ level: 'ok', msg: 'Single extruder? Every thickness is a whole number of ' +
+          lh.toFixed(2) + ' mm layers, so a filament change at ' + stops.join(', then ') +
+          ' gives the same result by hand.' });
+      }
+    }
+
     if (T < min * 2) {
       warn.push({ level: 'warn', msg: 'A ' + T.toFixed(1) + ' mm plate is quite flexible; ' +
         '1.5–3 mm is a good range for keychains.' });

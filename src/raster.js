@@ -403,7 +403,7 @@ window.KC = window.KC || {};
     ctx.translate(t.ox + tx.x * t.s, t.oy - tx.y * t.s);
     ctx.rotate(-tx.rotation * Math.PI / 180);
     ctx.font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
-               KC.FONTS[tx.font % KC.FONTS.length].css;
+               KC.fontByKey(KC.fontKey(tx.font)).css;
     ctx.textBaseline = 'middle';
     ctx.textAlign = tx.align;
     ctx.fillStyle = style.fill || '#fff';

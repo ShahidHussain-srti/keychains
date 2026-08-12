@@ -14,6 +14,7 @@ window.KC = window.KC || {};
     this.hot = null;        // element under the cursor
     this.selected = null;   // element clicked, movable with arrow keys
     this.drag = null;
+    this.resize = null;
     this._ringCache = null;
     this._bind();
   }
@@ -32,6 +33,15 @@ window.KC = window.KC || {};
   Preview.prototype.el = function (key) {
     return key === 'hole' ? this.state.hole : this.state.sides[this.state.activeSide][key];
   };
+
+  /* Resizing writes to a different field per element, with the same limits the
+     sliders use so the two can never disagree. */
+  var SIZE = {
+    text: { field: 'size',     min: 2, max: 40 },
+    art:  { field: 'size',     min: 3, max: 120 },
+    hole: { field: 'diameter', min: 2, max: 10 }
+  };
+  Preview.prototype.sizeSpec = function (key) { return SIZE[key]; };
 
   /* The back view mirrors the plate, so the hole drawn on it moves the opposite
      way to the pointer. Decoration is drawn unmirrored, so it is unaffected. */
@@ -330,7 +340,7 @@ window.KC = window.KC || {};
     var px = tx.size * t.s;
     ctx.save();
     ctx.font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
-               KC.FONTS[tx.font % KC.FONTS.length].css;
+               KC.fontByKey(KC.fontKey(tx.font)).css;
     var w = 0;
     for (var i = 0; i < lines.length; i++) {
       var lw = ctx.measureText(lines[i]).width + tx.tracking * t.s * Math.max(0, lines[i].length - 1);
@@ -342,6 +352,31 @@ window.KC = window.KC || {};
     // Alignment shifts the box relative to the anchor point.
     var shift = tx.align === 'center' ? 0 : tx.align === 'right' ? -w / 2 : w / 2;
     return { w: w + 6, h: h + 4, shift: shift };
+  };
+
+  /* Is (x, y) on a resize handle of the current selection? */
+  Preview.prototype.hitHandle = function (x, y) {
+    var key = this.selected;
+    if (!key || !this.movable(key) || !SIZE[key]) return null;
+    var t = this.transform();
+    var boxes = this.boxes(t);
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      if (b.key !== key) continue;
+      var dx = x - b.cx, dy = y - b.cy;
+      var c = Math.cos(-b.rot), sn = Math.sin(-b.rot);
+      var lx = dx * c - dy * sn, ly = dx * sn + dy * c;
+      var al = b.key === 'text' ? this.el('text').align : 'center';
+      var off = b.key === 'text' && al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
+      var L = off - b.w / 2, R = off + b.w / 2, T2 = -b.h / 2, B = b.h / 2;
+      var pts = b.round ? [[R + 3, 0]] : [[L, T2], [R, T2], [L, B], [R, B]];
+      for (var k = 0; k < pts.length; k++) {
+        if (Math.abs(lx - pts[k][0]) <= 7 && Math.abs(ly - pts[k][1]) <= 7) {
+          return { key: b.key, cx: b.cx, cy: b.cy };
+        }
+      }
+    }
+    return null;
   };
 
   Preview.prototype.hitTest = function (x, y) {
@@ -389,14 +424,20 @@ window.KC = window.KC || {};
       }
 
       if (isSel) {
-        // corner ticks + a name tag, so it reads as "this one is selected"
         ctx.setLineDash([]);
-        var c = 6, L = off - b.w / 2, R = off + b.w / 2, T2 = -b.h / 2, B = b.h / 2;
-        ctx.beginPath();
-        [[L, T2, 1, 1], [R, T2, -1, 1], [L, B, 1, -1], [R, B, -1, -1]].forEach(function (k) {
-          ctx.moveTo(k[0], k[1] + k[3] * c); ctx.lineTo(k[0], k[1]); ctx.lineTo(k[0] + k[2] * c, k[1]);
+        var L = off - b.w / 2, R = off + b.w / 2, T2 = -b.h / 2, B = b.h / 2;
+
+        // square grab handles at the corners — drag one to resize
+        var hs = 4;
+        ctx.fillStyle = 'rgba(90,169,255,1)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 1;
+        var corners = b.round ? [[R + 3, 0]] : [[L, T2], [R, T2], [L, B], [R, B]];
+        corners.forEach(function (k) {
+          ctx.fillRect(k[0] - hs, k[1] - hs, hs * 2, hs * 2);
+          ctx.strokeRect(k[0] - hs, k[1] - hs, hs * 2, hs * 2);
         });
-        ctx.stroke();
+        ctx.strokeStyle = 'rgba(90,169,255,1)';
 
         ctx.font = '10px -apple-system,system-ui,sans-serif';
         var tw = ctx.measureText(b.label).width + 10;
@@ -434,8 +475,25 @@ window.KC = window.KC || {};
 
     canvas.addEventListener('pointerdown', function (e) {
       var p = local(e);
-      var key = self.hitTest(p.x, p.y);
       canvas.focus();                      // so arrow keys reach us
+
+      // grabbing a corner handle resizes instead of moving
+      var h = self.hitHandle(p.x, p.y);
+      if (h) {
+        var spec = SIZE[h.key];
+        self.onBeginEdit();
+        if (h.key === 'hole') self.freeHole();
+        self.resize = {
+          key: h.key, field: spec.field, spec: spec,
+          start: self.el(h.key)[spec.field],
+          dist: Math.max(4, Math.hypot(p.x - h.cx, p.y - h.cy))
+        };
+        canvas.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        return;
+      }
+
+      var key = self.hitTest(p.x, p.y);
       if (!key) {
         if (self.selected) { self.selected = null; self.draw(); }
         return;
@@ -479,10 +537,25 @@ window.KC = window.KC || {};
 
     canvas.addEventListener('pointermove', function (e) {
       var p = local(e);
+
+      if (self.resize) {
+        var r = self.resize;
+        var b = self.boxes(self.transform()).filter(function (q) { return q.key === r.key; })[0];
+        if (!b) return;
+        var d = Math.max(4, Math.hypot(p.x - b.cx, p.y - b.cy));
+        var v = KC.clamp(r.start * (d / r.dist), r.spec.min, r.spec.max);
+        self.el(r.key)[r.field] = Math.round(v * 4) / 4;      // 0.25 mm steps
+        canvas.style.cursor = 'nwse-resize';
+        self.draw();
+        self.onChange(true);
+        return;
+      }
+
       if (!self.drag) {
-        var h = self.hitTest(p.x, p.y);
-        canvas.style.cursor = h ? 'grab' : 'default';
-        if (h !== self.hot) { self.hot = h; self.draw(); }
+        if (self.hitHandle(p.x, p.y)) { canvas.style.cursor = 'nwse-resize'; return; }
+        var hv = self.hitTest(p.x, p.y);
+        canvas.style.cursor = hv ? 'grab' : 'default';
+        if (hv !== self.hot) { self.hot = hv; self.draw(); }
         return;
       }
       if (!self.drag.moved) { self.drag.moved = true; self.onBeginEdit(); }
@@ -502,6 +575,16 @@ window.KC = window.KC || {};
     });
 
     var end = function (e) {
+      if (self.resize) {
+        self.resize = null;
+        canvas.style.cursor = 'default';
+        if (e && e.pointerId != null && canvas.hasPointerCapture(e.pointerId)) {
+          canvas.releasePointerCapture(e.pointerId);
+        }
+        self.draw();
+        self.onChange(false);        // …which saves and resyncs the sliders
+        return;
+      }
       if (!self.drag) return;
       self.drag = null;
       canvas.style.cursor = 'grab';

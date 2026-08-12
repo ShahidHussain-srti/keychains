@@ -333,25 +333,12 @@ window.KC = window.KC || {};
     return out;
   };
 
+  /* Straight from the shared layout, so the box hugs the same ink the mesh is
+     built from — including the vertical centring. */
   Preview.prototype._textMetrics = function (t) {
-    var tx = this.el('text');
-    var lines = (tx.content || '').split('\n');
-    var ctx = this.canvas.getContext('2d');
-    var px = tx.size * t.s;
-    ctx.save();
-    ctx.font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
-               KC.fontByKey(KC.fontKey(tx.font)).css;
-    var w = 0;
-    for (var i = 0; i < lines.length; i++) {
-      var lw = ctx.measureText(lines[i]).width + tx.tracking * t.s * Math.max(0, lines[i].length - 1);
-      if (lw > w) w = lw;
-    }
-    ctx.restore();
-    var h = px * tx.lineHeight * lines.length;
-    if (w < 4) return null;
-    // Alignment shifts the box relative to the anchor point.
-    var shift = tx.align === 'center' ? 0 : tx.align === 'right' ? -w / 2 : w / 2;
-    return { w: w + 6, h: h + 4, shift: shift };
+    var L = KC.textLayout(this.canvas.getContext('2d'), this.el('text'), t);
+    if (!L || L.width < 4) return null;
+    return { w: L.width + 6, h: L.height + 4 };
   };
 
   /* Is (x, y) on a resize handle of the current selection? */

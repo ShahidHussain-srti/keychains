@@ -1,16 +1,18 @@
 /* export.js — 3MF (multi-colour) and STL (single body) writers.
  *
- * The 3MF is one mesh object whose triangles are grouped into contiguous runs,
- * one per colour. Colour is declared three ways, because slicers disagree about
- * where to look and core 3MF materials alone import as a single colour:
+ * Layout follows how Bambu Studio actually writes a multi-colour file: one mesh
+ * object per colour, gathered by an assembly object's <components>. Colour is
+ * then declared three ways, because slicers disagree about where to look:
  *
- *   <basematerials> + per-triangle pid/p1   spec-correct; viewers and thumbnails
- *   Metadata/Slic3r_PE_model.config         PrusaSlicer, SuperSlicer, OrcaSlicer
- *   Metadata/model_settings.config          Bambu Studio, OrcaSlicer, Creality Print
- *   Metadata/project_settings.config        filament swatches for the above
+ *   Metadata/model_settings.config    Bambu, Orca, Creality — <part id> is the
+ *                                     component's objectid, plus an extruder
+ *   Metadata/Slic3r_PE_model.config   PrusaSlicer, SuperSlicer — the same parts
+ *                                     addressed as triangle ranges
+ *   Metadata/project_settings.config  filament swatches for both
+ *   <basematerials>                   ignored by slicers; used by viewers
  *
- * The last three map each triangle run to an extruder number, which is what
- * actually drives a multi-material print.
+ * A real Bambu file carries no basematerials at all, which is why a file relying
+ * on them imports as a single colour.
  */
 window.KC = window.KC || {};
 (function (KC) {
@@ -70,7 +72,8 @@ window.KC = window.KC || {};
     var parts = model.parts.filter(function (p) { return p.indices.length; });
     if (!parts.length) return Promise.reject(new Error('Nothing to export.'));
 
-    /* One base material per distinct colour actually used. */
+    /* One base material per distinct colour actually used. Slicers ignore these,
+       but generic viewers and thumbnails use them. */
     var slots = [], slotOf = {};
     parts.forEach(function (p) {
       if (slotOf[p.colorIndex] === undefined) {
@@ -79,31 +82,29 @@ window.KC = window.KC || {};
       }
     });
 
-    var MATGROUP = 1, OBJ = 2;
+    var MATGROUP = 1;
     var name = state.name || 'keychain';
 
-    /* Everything goes into ONE mesh, with each colour recorded as a contiguous
-       run of triangles. Slicers read those runs from their own metadata files
-       below — core <basematerials> alone is not what they use to pick an
-       extruder, which is why a materials-only file imports as a single colour. */
-    var verts = [], tris = [], volumes = [], vBase = 0;
+    /* Layout copied from how Bambu Studio actually writes a multi-colour file:
+       one mesh object per colour, gathered by an assembly object's components.
+       model_settings.config then keys each <part> by the *component's objectid*
+       and gives it an extruder — that id link is what makes the colours stick. */
+    var meshes = [], firstId = MATGROUP + 1, id = firstId, triAt = 0;
 
     parts.forEach(function (part) {
-      var m = dedupe(part);                    // welded per part, never across
-      var first = tris.length / 3;
-      for (var i = 0; i < m.verts.length; i += 3) {
-        verts.push(m.verts[i], m.verts[i + 1], m.verts[i + 2]);
-      }
-      for (var t = 0; t < m.tris.length; t++) tris.push(m.tris[t] + vBase);
-      vBase += m.verts.length / 3;
-      volumes.push({
-        first: first, last: tris.length / 3 - 1,
-        label: part.label, slot: slotOf[part.colorIndex],
-        extruder: part.colorIndex + 1        // palette slot 1..4 -> extruder 1..4
+      var m = dedupe(part);
+      meshes.push({
+        id: id++, label: part.label, verts: m.verts, tris: m.tris,
+        slot: slotOf[part.colorIndex],
+        // Numbered densely from 1 in order of use: a slicer with two filaments
+        // loaded cannot map an "extruder 4" emitted from palette slot 4.
+        extruder: slotOf[part.colorIndex] + 1,
+        first: triAt, last: triAt + m.tris.length / 3 - 1
       });
+      triAt += m.tris.length / 3;
     });
 
-    var defaultSlot = volumes.length ? volumes[0].slot : 0;
+    var assembly = id;
 
     var xml = [];
     xml.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -120,62 +121,72 @@ window.KC = window.KC || {};
     });
     xml.push('</basematerials>');
 
-    xml.push('<object id="' + OBJ + '" type="model" name="' + esc(name) +
-             '" pid="' + MATGROUP + '" pindex="' + defaultSlot + '">');
-    xml.push('<mesh><vertices>');
-    for (var v = 0; v < verts.length; v += 3) {
-      xml.push('<vertex x="' + num(verts[v]) + '" y="' + num(verts[v + 1]) +
-               '" z="' + num(verts[v + 2]) + '"/>');
-    }
-    xml.push('</vertices><triangles>');
-    volumes.forEach(function (vol) {
-      // the object-level material covers the first run, so only the others need
-      // a per-triangle override
-      var over = vol.slot === defaultSlot ? ''
-        : ' pid="' + MATGROUP + '" p1="' + vol.slot + '"';
-      for (var f = vol.first; f <= vol.last; f++) {
-        xml.push('<triangle v1="' + tris[f * 3] + '" v2="' + tris[f * 3 + 1] +
-                 '" v3="' + tris[f * 3 + 2] + '"' + over + '/>');
+    meshes.forEach(function (ms) {
+      xml.push('<object id="' + ms.id + '" type="model" name="' + esc(ms.label) +
+               '" pid="' + MATGROUP + '" pindex="' + ms.slot + '">');
+      xml.push('<mesh><vertices>');
+      for (var v = 0; v < ms.verts.length; v += 3) {
+        xml.push('<vertex x="' + num(ms.verts[v]) + '" y="' + num(ms.verts[v + 1]) +
+                 '" z="' + num(ms.verts[v + 2]) + '"/>');
       }
+      xml.push('</vertices><triangles>');
+      for (var t = 0; t < ms.tris.length; t += 3) {
+        xml.push('<triangle v1="' + ms.tris[t] + '" v2="' + ms.tris[t + 1] +
+                 '" v3="' + ms.tris[t + 2] + '"/>');
+      }
+      xml.push('</triangles></mesh></object>');
     });
-    xml.push('</triangles></mesh></object>');
+
+    xml.push('<object id="' + assembly + '" type="model" name="' + esc(name) + '">');
+    xml.push('<components>');
+    meshes.forEach(function (ms) {
+      xml.push('<component objectid="' + ms.id + '" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>');
+    });
+    xml.push('</components></object>');
     xml.push('</resources>');
 
     var b = bounds(parts);
-    xml.push('<build><item objectid="' + OBJ + '" transform="1 0 0 0 1 0 0 0 1 ' +
-             num(-b.minX) + ' ' + num(-b.minY) + ' ' + num(-b.minZ) + '"/></build>');
+    xml.push('<build><item objectid="' + assembly + '" transform="1 0 0 0 1 0 0 0 1 ' +
+             num(-b.minX) + ' ' + num(-b.minY) + ' ' + num(-b.minZ) + '" printable="1"/></build>');
     xml.push('</model>');
 
-    /* PrusaSlicer / SuperSlicer / OrcaSlicer: volumes by triangle range, each
-       pinned to an extruder. This is the file those slicers actually consult. */
+    /* Bambu Studio / OrcaSlicer / Creality Print. <part id> must be the
+       component's objectid — not a triangle range, which is what a real Bambu
+       file makes clear. */
+    var IDENTITY = '1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1';
+    var ms2 = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>'];
+    ms2.push('  <object id="' + assembly + '">');
+    ms2.push('    <metadata key="name" value="' + esc(name) + '"/>');
+    ms2.push('    <metadata key="extruder" value="' + (meshes[0].extruder) + '"/>');
+    meshes.forEach(function (m2) {
+      ms2.push('    <part id="' + m2.id + '" subtype="normal_part">');
+      ms2.push('      <metadata key="name" value="' + esc(m2.label) + '"/>');
+      ms2.push('      <metadata key="extruder" value="' + m2.extruder + '"/>');
+      ms2.push('      <metadata key="matrix" value="' + IDENTITY + '"/>');
+      ms2.push('      <mesh_stat face_count="' + (m2.tris.length / 3) + '" edges_fixed="0" ' +
+               'degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>');
+      ms2.push('    </part>');
+    });
+    ms2.push('  </object>', '</config>');
+
+    /* PrusaSlicer / SuperSlicer merge the components into volumes in order, so
+       its config addresses them as triangle ranges over that concatenation. */
     var pe = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>'];
-    pe.push(' <object id="' + OBJ + '">');
+    pe.push(' <object id="' + assembly + '">');
     pe.push('  <metadata type="object" key="name" value="' + esc(name) + '"/>');
-    volumes.forEach(function (vol) {
-      pe.push('  <volume firstid="' + vol.first + '" lastid="' + vol.last + '">');
-      pe.push('   <metadata type="volume" key="name" value="' + esc(vol.label) + '"/>');
+    meshes.forEach(function (m3) {
+      pe.push('  <volume firstid="' + m3.first + '" lastid="' + m3.last + '">');
+      pe.push('   <metadata type="volume" key="name" value="' + esc(m3.label) + '"/>');
       pe.push('   <metadata type="volume" key="volume_type" value="ModelPart"/>');
-      pe.push('   <metadata type="volume" key="extruder" value="' + vol.extruder + '"/>');
+      pe.push('   <metadata type="volume" key="extruder" value="' + m3.extruder + '"/>');
       pe.push('  </volume>');
     });
     pe.push(' </object>', '</config>');
 
-    /* Bambu Studio / OrcaSlicer read this one instead. */
-    var ms = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>'];
-    ms.push('  <object id="' + OBJ + '">');
-    ms.push('    <metadata key="name" value="' + esc(name) + '"/>');
-    volumes.forEach(function (vol, i) {
-      ms.push('    <part id="' + (i + 1) + '" subtype="normal_part" firstid="' +
-              vol.first + '" lastid="' + vol.last + '">');
-      ms.push('      <metadata key="name" value="' + esc(vol.label) + '"/>');
-      ms.push('      <metadata key="extruder" value="' + vol.extruder + '"/>');
-      ms.push('    </part>');
-    });
-    ms.push('  </object>', '</config>');
-
-    /* …and this makes their filament swatches match the design. */
-    var pal = state.colors.palette.map(function (c) { return c.toUpperCase(); });
-    var proj = JSON.stringify({ filament_colour: pal, filament_type: pal.map(function () { return 'PLA'; }) });
+    /* Filament swatches, in the same order as the extruder numbering. */
+    var pal = slots.map(function (sl) { return sl.color.toUpperCase(); });
+    var proj = JSON.stringify({ filament_colour: pal,
+                                filament_type: pal.map(function () { return 'PLA'; }) });
 
     var contentTypes =
       '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -183,6 +194,7 @@ window.KC = window.KC || {};
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
       '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>' +
       '<Default Extension="config" ContentType="application/xml"/>' +
+      '<Default Extension="png" ContentType="image/png"/>' +
       '</Types>';
 
     var rels =
@@ -197,8 +209,8 @@ window.KC = window.KC || {};
       { name: '[Content_Types].xml', data: enc.encode(contentTypes) },
       { name: '_rels/.rels',         data: enc.encode(rels) },
       { name: '3D/3dmodel.model',    data: enc.encode(xml.join('\n')) },
-      { name: 'Metadata/Slic3r_PE_model.config', data: enc.encode(pe.join('\n')) },
-      { name: 'Metadata/model_settings.config',  data: enc.encode(ms.join('\n')) },
+      { name: 'Metadata/model_settings.config',   data: enc.encode(ms2.join('\n')) },
+      { name: 'Metadata/Slic3r_PE_model.config',  data: enc.encode(pe.join('\n')) },
       { name: 'Metadata/project_settings.config', data: enc.encode(proj) }
     ]);
   };

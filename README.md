@@ -21,16 +21,24 @@ Click text, picture or hole in the Layout view to select; drag or arrow-key to m
 
 ## Printing
 
-Import the `.3mf` into PrusaSlicer, OrcaSlicer, Bambu Studio or Creality Print. It
-arrives as one object whose parts are already assigned to extruders 1–4, matching the
-palette slots. Every part is independently watertight with outward normals.
-**STL** exports a single-colour mesh instead.
+Import the `.3mf` into PrusaSlicer, OrcaSlicer, Bambu Studio or Creality Print. It arrives
+as one object whose parts are pre-assigned to extruders, numbered from 1 in order of use.
+Every part is independently watertight with outward normals. **STL** exports a
+single-colour mesh instead.
 
-Colour needs a multi-material printer (AMS / CFS / MMU) or manual filament swaps — on a
-single-extruder machine the slicer will show and print one colour no matter what the
-file says. The extruder assignment is written three ways (`basematerials` plus
-`Slic3r_PE_model.config` and `model_settings.config`) because slicers disagree about
-where to look; core 3MF materials on their own import as a single colour.
+The layout follows how Bambu Studio itself writes a multi-colour file: one mesh object per
+colour, gathered by an assembly object's `<components>`, with
+`Metadata/model_settings.config` keying each `<part>` by the *component's objectid* and
+giving it an extruder. That id link is what makes colour stick. `Slic3r_PE_model.config`
+states the same thing as triangle ranges for PrusaSlicer. Core `basematerials` are also
+written for viewers, but slicers ignore them — a real Bambu file contains none, which is
+why a file relying on them imports as a single colour.
+
+Colour needs a multi-material printer (AMS / CFS / MMU). On a single-extruder machine the
+3D view may show the colours while the **print preview stays one colour**: the slicer maps
+every part to extruder 1 and the file cannot override that. In **raised** mode each colour
+sits in its own band of layers, so a manual filament change gives the same result — the
+warnings strip tells you the exact layer.
 
 Set **layer height** to match your slicer: every thickness is a whole multiple of it and
 at least 3 layers, so nothing asks for a partial layer.

@@ -157,14 +157,7 @@
       <div class="body">
         <div class="row">
           <label for="f-b-style">Style</label>
-          <select id="f-b-style" data-bind="~.border.style">
-            <option value="none">None</option>
-            <option value="single">Single line</option>
-            <option value="double">Double line</option>
-            <option value="dashed">Dashed</option>
-            <option value="dotted">Dotted</option>
-            <option value="band">Thick band</option>
-          </select>
+          <select id="f-b-style" data-bind="~.border.style"></select>
         </div>
         <div class="row" data-hide="~.border.style:none">
           <label for="f-b-shape">Follows</label>
@@ -191,12 +184,12 @@
           <label for="f-b-width">Line width <b data-val="~.border.width"></b></label>
           <input id="f-b-width" type="range" data-bind="~.border.width" min="0.4" max="10" step="0.1">
         </div>
-        <div class="row" data-show="~.border.style:double">
-          <label for="f-b-gap">Gap <b data-val="~.border.gap"></b></label>
+        <div class="row" data-show="~.border.style:double|triple|thinthick|groove|wave|zigzag|scallop|braid|wavedash">
+          <label for="f-b-gap"><span id="lbl-b-gap">Gap</span> <b data-val="~.border.gap"></b></label>
           <input id="f-b-gap" type="range" data-bind="~.border.gap" min="0.4" max="8" step="0.1">
         </div>
-        <div class="row" data-show="~.border.style:dashed|dotted">
-          <label for="f-b-dashes">Count <b data-val="~.border.dashes" data-fmt="n"></b></label>
+        <div class="row" data-show="~.border.style:dashed|dotted|dashdot|beads|ticks|wave|zigzag|scallop|braid|wavedash">
+          <label for="f-b-dashes"><span id="lbl-b-dashes">Count</span> <b data-val="~.border.dashes" data-fmt="n"></b></label>
           <input id="f-b-dashes" type="range" data-bind="~.border.dashes" min="4" max="80" step="1">
         </div>
         <div class="row" data-show="~.border.shape:rect|circle|ellipse|pill|hex|oct|tri|star|heart|shield">

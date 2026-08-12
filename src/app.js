@@ -19,6 +19,13 @@
       sp.appendChild(o);
     });
 
+    var bs = $('#f-b-style');
+    KC.BORDER_STYLES.forEach(function (st) {
+      var o = document.createElement('option');
+      o.value = st[0]; o.textContent = st[1];
+      bs.appendChild(o);
+    });
+
     var fs = $('#font-select');
     KC.FONTS.forEach(function (f, i) {
       var o = document.createElement('option');
@@ -341,6 +348,13 @@
     }
 
     var inl = KC.inlayDepthOf(state);
+    /* The two shared border numbers mean different things per style. */
+    var bstyle = state.sides[state.activeSide].border.style;
+    var wavy = KC.isWavyBorder(bstyle);
+    var gl = $('#lbl-b-gap'), dl = $('#lbl-b-dashes');
+    if (gl) gl.textContent = wavy ? 'Wave depth' : 'Gap';
+    if (dl) dl.textContent = wavy ? 'Waves' : 'Count';
+
     var lbl = $('#inlay-layers');
     if (lbl) {
       lbl.textContent = inl.depth.toFixed(2) + ' mm deep = ' + inl.layers + ' layer' +
@@ -849,7 +863,14 @@
     populate();
 
     preview = new KC.Preview($('#c2d'), state,
-      function (dragging) { if (!dragging) refresh(); rebuild(); },
+      function (dragging) {
+        // Dragging mutates state directly rather than through the binder, so it
+        // has to save explicitly — otherwise a dragged position is lost on
+        // refresh while the same change made with a slider survives.
+        if (dragging) { rebuild(); persist(); return; }
+        refresh();      // a finished drag can change a <select> (hole → custom)
+        apply();        // …and apply() is what saves the session
+      },
       function () { beginEdit(450); });     // drag / arrow-key nudge = one undo step
     try {
       viewer = new KC.Viewer($('#c3d'));

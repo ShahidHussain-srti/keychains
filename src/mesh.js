@@ -302,6 +302,25 @@ window.KC = window.KC || {};
           rel.layers + ' whole layers at ' + lh.toFixed(2) + ' mm.' });
       }
     }
+    /* A single-extruder machine maps every part to extruder 1, so the print
+       preview comes out one colour no matter what the file says. Raised relief
+       puts each colour in its own band of layers, so a filament change at the
+       right layer gets you the colours by hand. */
+    if (relief === 'raised' && countColors(parts) > 1) {
+      var lay = function (z) { return Math.round(z / lh) + 1; };
+      var stops = [];
+      if (live.back && depth.back > 0) {
+        stops.push('layer ' + lay(depth.back) + ' (Z ' + depth.back.toFixed(1) + ' mm) for the plate');
+        stops.push('layer ' + lay(depth.back + T) + ' (Z ' + (depth.back + T).toFixed(1) +
+                   ' mm) for the front detail');
+      } else {
+        stops.push('layer ' + lay(T) + ' (Z ' + T.toFixed(1) + ' mm) for the detail');
+      }
+      warn.push({ level: 'ok', msg: 'Single extruder? Every thickness here is a whole ' +
+        'number of ' + lh.toFixed(2) + ' mm layers, so a filament change at ' +
+        stops.join(', then ') + ' gives the same result by hand.' });
+    }
+
     if (squeezed) {
       warn.push({ level: 'warn', msg: 'Both faces are ' +
         (relief === 'engraved' ? 'engraved' : 'inlaid') + ', so each was limited to ' +

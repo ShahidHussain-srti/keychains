@@ -388,23 +388,75 @@ window.KC = window.KC || {};
     return out;
   };
 
-  /* ── text ───────────────────────────────────────────────────────── */
+  /* ── text ─────────────────────────────────────────────────────────
+     Laid out once, here, and reused by the rasteriser and the selection box so
+     the two can never disagree.
+
+     Vertical centring uses the *ink* bounds (actualBoundingBox…), not canvas's
+     'middle' baseline. 'middle' centres the em box, which reserves descender
+     space below the baseline that caps-only text never uses — so "HELLO"
+     centred that way sits visibly high. */
+  KC.textLayout = function (ctx, tx, t) {
+    var content = tx.content || '';
+    if (!content.trim()) return null;
+    var px = tx.size * t.s;
+    if (px < 1) return null;
+
+    var lines = content.split('\n');
+    var font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
+               KC.fontByKey(KC.fontKey(tx.font)).css;
+    var track = tx.tracking * t.s;
+    var lh = px * tx.lineHeight;
+
+    ctx.save();
+    ctx.font = font;
+    ctx.textBaseline = 'alphabetic';
+
+    var info = lines.map(function (line) {
+      var m = ctx.measureText(line);
+      var w = m.width;
+      if (Math.abs(track) > 0.01) {
+        var chars = Array.from(line), sum = 0;
+        for (var i = 0; i < chars.length; i++) sum += ctx.measureText(chars[i]).width;
+        w = sum + track * Math.max(0, chars.length - 1);
+      }
+      var asc = m.actualBoundingBoxAscent, desc = m.actualBoundingBoxDescent;
+      if (!(asc > 0 || asc === 0) || !isFinite(asc)) asc = px * 0.72;   // pre-2020 fallback
+      if (!(desc > 0 || desc === 0) || !isFinite(desc)) desc = px * 0.2;
+      if (!line.trim()) { asc = 0; desc = 0; }                          // blank line: no ink
+      return { w: w, asc: asc, desc: desc };
+    });
+    ctx.restore();
+
+    var maxW = 0;
+    info.forEach(function (i) { if (i.w > maxW) maxW = i.w; });
+
+    // topmost and bottommost lines that actually put ink down
+    var firstInk = -1, lastInk = 0;
+    for (var i = 0; i < info.length; i++) {
+      if (info[i].asc > 0 || info[i].desc > 0) { if (firstInk < 0) firstInk = i; lastInk = i; }
+    }
+    if (firstInk < 0) return null;
+
+    var top = firstInk * lh - info[firstInk].asc;
+    var bot = lastInk * lh + info[lastInk].desc;
+    var y0 = -(top + bot) / 2;          // baseline of line 0, ink centred on 0
+
+    return { lines: lines, info: info, font: font, lh: lh, y0: y0, track: track,
+             width: maxW, height: bot - top, align: tx.align };
+  };
+
   /* Also used by the preview, hence the colour/stroke parameters. */
   KC.drawText = function (ctx, state, t, style) {
     var tx = state.text;
-    var content = (tx.content || '');
-    if (!content.trim()) return null;
-
-    var lines = content.split('\n');
-    var px = tx.size * t.s;
-    if (px < 1) return null;
+    var L = KC.textLayout(ctx, tx, t);
+    if (!L) return null;
 
     ctx.save();
     ctx.translate(t.ox + tx.x * t.s, t.oy - tx.y * t.s);
     ctx.rotate(-tx.rotation * Math.PI / 180);
-    ctx.font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
-               KC.fontByKey(KC.fontKey(tx.font)).css;
-    ctx.textBaseline = 'middle';
+    ctx.font = L.font;
+    ctx.textBaseline = 'alphabetic';
     ctx.textAlign = tx.align;
     ctx.fillStyle = style.fill || '#fff';
     ctx.strokeStyle = style.fill || '#fff';
@@ -413,16 +465,12 @@ window.KC = window.KC || {};
     ctx.lineWidth = tx.strokeWidth * t.s;
 
     var outline = tx.style === 'outline';
-    var lh = px * tx.lineHeight;
-    var top = -(lines.length - 1) * lh / 2;
-    var track = tx.tracking * t.s;
-
-    for (var i = 0; i < lines.length; i++) {
-      var y = top + i * lh;
-      if (Math.abs(track) < 0.01) {
-        if (outline) ctx.strokeText(lines[i], 0, y); else ctx.fillText(lines[i], 0, y);
+    for (var i = 0; i < L.lines.length; i++) {
+      var y = L.y0 + i * L.lh;
+      if (Math.abs(L.track) < 0.01) {
+        if (outline) ctx.strokeText(L.lines[i], 0, y); else ctx.fillText(L.lines[i], 0, y);
       } else {
-        drawTracked(ctx, lines[i], y, track, tx.align, outline);
+        drawTracked(ctx, L.lines[i], y, L.track, tx.align, outline, L.info[i].w);
       }
     }
     ctx.restore();
@@ -430,21 +478,14 @@ window.KC = window.KC || {};
   };
 
   /* Letter-spacing done by hand so it behaves identically everywhere. */
-  function drawTracked(ctx, line, y, track, align, outline) {
+  function drawTracked(ctx, line, y, track, align, outline, total) {
     var chars = Array.from(line);
-    var widths = [], total = 0, i;
-    for (i = 0; i < chars.length; i++) {
-      widths[i] = ctx.measureText(chars[i]).width;
-      total += widths[i];
-    }
-    total += track * Math.max(0, chars.length - 1);
-
     var x = align === 'center' ? -total / 2 : align === 'right' ? -total : 0;
     var prev = ctx.textAlign;
     ctx.textAlign = 'left';
-    for (i = 0; i < chars.length; i++) {
+    for (var i = 0; i < chars.length; i++) {
       if (outline) ctx.strokeText(chars[i], x, y); else ctx.fillText(chars[i], x, y);
-      x += widths[i] + track;
+      x += ctx.measureText(chars[i]).width + track;
     }
     ctx.textAlign = prev;
   }

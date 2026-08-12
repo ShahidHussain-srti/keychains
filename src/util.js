@@ -90,6 +90,10 @@ window.KC = window.KC || {};
   KC.faceDefaults = function (which) {
     return {
       enabled: which === 'front',
+      relief: 'raised', reliefHeight: 0.6,
+      // Recessed by default: a through cut shows on both faces, which is
+      // surprising when only one face is decorated.
+      inlayThrough: false, inlayDepth: 1.2,
       border: { style: 'single', shape: 'follow', inset: 2, width: 1.2, gap: 1.2,
                 dashes: 24, radius: 4 },
       text:   { content: which === 'front' ? 'HELLO' : '', font: 'grotesk', bold: true,
@@ -102,11 +106,7 @@ window.KC = window.KC || {};
 
   KC.defaults = function () {
     return {
-      shape:  { preset: 'rect', width: 58, height: 30, radius: 6, thickness: 3,
-                relief: 'raised', reliefHeight: 0.6,
-                // Recessed by default: a through cut shows on both faces, which
-                // is surprising when only one face is decorated.
-                inlayThrough: false, inlayDepth: 1.2 },
+      shape:  { preset: 'rect', width: 58, height: 30, radius: 6, thickness: 3 },
       layerHeight: 0.2,
       hole:   { enabled: true, diameter: 4, margin: 4, position: 'tl', x: 0, y: 0 },
       sides:  { front: KC.faceDefaults('front'), back: KC.faceDefaults('back') },
@@ -135,6 +135,10 @@ window.KC = window.KC || {};
     v.border = f.border;
     v.text = f.text;
     v.art = f.art;
+    v.relief = f.relief;
+    v.reliefHeight = f.reliefHeight;
+    v.inlayThrough = f.inlayThrough;
+    v.inlayDepth = f.inlayDepth;
     v._assets = KC.assets[which];
     v._side = which;
     return v;
@@ -227,10 +231,11 @@ window.KC = window.KC || {};
 
   /* Depth of raised/engraved detail. Engraving must leave the floor's worth of
      plate underneath, so it can't eat the whole thickness. */
-  KC.reliefDepthOf = function (state) {
-    var T = state.shape.thickness;
-    var max = state.shape.relief === 'engraved' ? T - KC.minDepthOf(state) : null;
-    var r = KC.snapDepth(state, state.shape.reliefHeight, max);
+  /* Both take a face view (KC.faceState) — relief is a per-side choice. */
+  KC.reliefDepthOf = function (fs) {
+    var T = fs.shape.thickness;
+    var max = fs.relief === 'engraved' ? T - KC.minDepthOf(fs) : null;
+    var r = KC.snapDepth(fs, fs.reliefHeight, max);
     r.through = false;
     return r;
   };
@@ -242,15 +247,30 @@ window.KC = window.KC || {};
     /* A through cut is defined by the plate, not by layer boundaries — snapping
        it would quietly leave a floor behind on any thickness that isn't a whole
        number of layers (2.5 mm at 0.2 mm, say). */
-    if (state.shape.inlayThrough) {
+    if (state.inlayThrough) {
       return { depth: T, floor: KC.minDepthOf(state), lh: lh,
                layers: Math.round(T / lh), through: true,
                tooThin: T < KC.minDepthOf(state) - 1e-6 };
     }
 
-    var r = KC.snapDepth(state, state.shape.inlayDepth, T);
+    var r = KC.snapDepth(state, state.inlayDepth, T);
     r.through = false;
     return r;
+  };
+
+  /* What a face does to the plate, resolved to z-extents. `cut` is how far it
+     eats into the plate from its own surface; raised relief eats nothing. */
+  KC.faceRelief = function (fs) {
+    var T = fs.shape.thickness;
+    var rel = KC.reliefDepthOf(fs);
+    var inl = KC.inlayDepthOf(fs);
+    var style = fs.relief;
+    if (style === 'raised')   return { style: style, depth: rel.depth, cut: 0,
+                                       through: false, rel: rel, inl: inl };
+    if (style === 'engraved') return { style: style, depth: rel.depth, cut: rel.depth,
+                                       through: false, rel: rel, inl: inl };
+    return { style: 'inlay', depth: inl.depth, cut: inl.through ? T : inl.depth,
+             through: inl.through, rel: rel, inl: inl };
   };
 
   /* Mirror a mask about the plate's vertical centre line — how the back face is

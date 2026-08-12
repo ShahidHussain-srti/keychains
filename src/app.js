@@ -94,15 +94,13 @@
     // Count what is in use across both faces, not just the one on screen.
     var used = {};
     used[state.colors.base] = 1;
-    if (state.shape.relief !== 'engraved') {
-      ['front', 'back'].forEach(function (w) {
-        var f = state.sides[w];
-        if (!f.enabled) return;
-        if (f.border.style !== 'none') used[state.colors.border] = 1;
-        if ((f.text.content || '').trim()) used[state.colors.text] = 1;
-        if (f.art.source !== 'none') used[state.colors.art] = 1;
-      });
-    }
+    ['front', 'back'].forEach(function (w) {
+      var f = state.sides[w];
+      if (!f.enabled || f.relief === 'engraved') return;   // a recess has no colour
+      if (f.border.style !== 'none') used[state.colors.border] = 1;
+      if ((f.text.content || '').trim()) used[state.colors.text] = 1;
+      if (f.art.source !== 'none') used[state.colors.art] = 1;
+    });
     var n = Object.keys(used).length;
     $('#color-count').textContent = n + (n === 1 ? ' filament' : ' filaments') +
       ' in use' + (n > 1 ? ' — needs a multi-material printer or manual swaps.' : '.');
@@ -331,26 +329,26 @@
       th.value = T;
     }
 
+    var face = state.sides[state.activeSide];
+
     var maxInlay = Math.max(minD, T);
-    state.shape.inlayDepth =
-      KC.clamp(lay(state.shape.inlayDepth), Math.min(minD, maxInlay), maxInlay);
-    var d = $('#f-shape-inlayDepth');
+    face.inlayDepth = KC.clamp(lay(face.inlayDepth), Math.min(minD, maxInlay), maxInlay);
+    var d = $('#f-inlayDepth');
     if (d) {
       d.min = Math.min(minD, maxInlay).toFixed(2);
       d.max = maxInlay.toFixed(2);
       d.step = lh.toFixed(2);
-      d.value = state.shape.inlayDepth;
+      d.value = face.inlayDepth;
     }
 
-    var maxRelief = state.shape.relief === 'engraved' ? Math.max(minD, T - minD) : 3;
-    state.shape.reliefHeight =
-      KC.clamp(lay(state.shape.reliefHeight), minD, Math.max(minD, maxRelief));
-    var rh = $('#f-shape-reliefHeight');
+    var maxRelief = face.relief === 'engraved' ? Math.max(minD, T - minD) : 3;
+    face.reliefHeight = KC.clamp(lay(face.reliefHeight), minD, Math.max(minD, maxRelief));
+    var rh = $('#f-reliefHeight');
     if (rh) {
       rh.min = minD.toFixed(2);
       rh.max = Math.max(minD, maxRelief).toFixed(2);
       rh.step = lh.toFixed(2);
-      rh.value = state.shape.reliefHeight;
+      rh.value = face.reliefHeight;
     }
 
     var inl = KC.inlayDepthOf(state);
@@ -786,6 +784,18 @@
         } else { dst[k] = src[k]; }
       });
     })(d, ps);
+
+    /* Relief used to live on the plate; give both faces the old setting. */
+    if (ps.shape && ps.shape.relief !== undefined && ps.sides) {
+      ['front', 'back'].forEach(function (w) {
+        if (!ps.sides[w]) return;
+        ['relief', 'reliefHeight', 'inlayThrough', 'inlayDepth'].forEach(function (k) {
+          if (ps.sides[w][k] === undefined && ps.shape[k] !== undefined) {
+            ps.sides[w][k] = ps.shape[k];
+          }
+        });
+      });
+    }
 
     ['front', 'back'].forEach(function (w) {
       d.sides[w].text.font = KC.fontKey(d.sides[w].text.font);

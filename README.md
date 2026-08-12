@@ -7,8 +7,10 @@ No dependencies, no build step — **double-click `index.html`**.
 ## Controls
 
 - **Shape** — 12 presets or draw your own outline; width, height, corner radius, thickness
-- **Sides** — front and back decorated independently; copy one to the other, or switch one off
-- **Relief** — raised, inlay (recessed or cut through), or engraved
+- **Sides** — front and back decorated independently, each with its own relief style;
+  copy one to the other, or switch one off
+- **Relief** — raised, inlay (recessed or cut through), or engraved — per face, so you can
+  emboss the front and engrave the back
 - **Border** — 16 styles: lines, dashes, dots, beads, ticks, wave, zigzag, scallop, braid;
   inset to 0 for a flush rim; can trace a different shape than the plate
 - **Text** — 16 fonts, solid or outlined, size/spacing/rotation, multiple lines

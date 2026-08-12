@@ -195,7 +195,7 @@ window.KC = window.KC || {};
     var out = layer('prevout');
     out.g.drawImage(plateCanvas, 0, 0, W, H);
     out.g.drawImage(feat.c, 0, 0, W, H);
-    if (state.shape.relief === 'engraved') {
+    if (state.sides[state.activeSide].relief === 'engraved') {
       out.g.globalCompositeOperation = 'source-atop';
       out.g.fillStyle = 'rgba(0,0,0,0.22)';
       out.g.fillRect(0, 0, W, H);
@@ -218,10 +218,11 @@ window.KC = window.KC || {};
      its artwork is visible from here because the cut goes all the way through. */
   Preview.prototype._throughOwner = function () {
     var s = this.state;
-    if (s.shape.relief !== 'inlay' || !s.shape.inlayThrough) return null;
     var side = s.activeSide, o = side === 'front' ? 'back' : 'front';
     if (s.sides[side].enabled) return null;      // this face owns its own design
-    return s.sides[o].enabled ? o : null;
+    var far = s.sides[o];
+    if (!far.enabled || far.relief !== 'inlay' || !far.inlayThrough) return null;
+    return o;
   };
 
   /* Which face you are looking at, and whether it is switched on. */

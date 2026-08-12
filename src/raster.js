@@ -126,9 +126,221 @@ window.KC = window.KC || {};
     return KC.mask.fromCanvas(o.canvas);
   };
 
-  /* ── border ─────────────────────────────────────────────────────── */
-  /* Built from a signed distance field so it hugs whatever outline it is
-     given — including hand-drawn ones — with naturally rounded corners. */
+  /* ── border ───────────────────────────────────────────────────────
+     Built from a signed distance field so it hugs whatever outline it is given —
+     including hand-drawn ones — with naturally rounded corners.
+
+     Solid styles are distance bands. Broken styles (dashes, dots, ticks) are
+     stroked along the traced centreline instead, because spacing them by angle
+     from the plate centre bunches them at the corners of anything that isn't a
+     circle. Canvas dash patterns run on arc length, which is what we want. */
+
+  /* Each style is a list of [from, to] distances inward from the outline,
+     expressed in multiples of the line width and the gap. */
+  KC.BORDER_STYLES = [
+    ['none',      'None'],
+    ['single',    'Single line'],
+    ['double',    'Double line'],
+    ['triple',    'Triple line'],
+    ['thinthick', 'Thick + thin'],
+    ['groove',    'Groove'],
+    ['band',      'Thick band'],
+    ['dashed',    'Dashed'],
+    ['dotted',    'Dotted'],
+    ['dashdot',   'Dash-dot'],
+    ['beads',     'Beads'],
+    ['ticks',     'Ticks'],
+    ['wave',      'Wave'],
+    ['zigzag',    'Zigzag'],
+    ['scallop',   'Scallop'],
+    ['braid',     'Braid'],
+    ['wavedash',  'Wavy dashes']
+  ];
+
+  var STROKED = { dashed: 1, dotted: 1, dashdot: 1, beads: 1, ticks: 1,
+                  wave: 1, zigzag: 1, scallop: 1, braid: 1, wavedash: 1 };
+  var WAVY = { wave: 'wave', zigzag: 'zigzag', scallop: 'scallop',
+               braid: 'wave', wavedash: 'wave' };
+  KC.isWavyBorder = function (style) { return !!WAVY[style]; };
+  KC.isStrokedBorder = function (style) { return !!STROKED[style]; };
+
+  /* Distance bands for the solid styles, measured inward from the outline. */
+  function bandsFor(b) {
+    var w = b.width, gap = b.gap, i0 = b.inset, out = [];
+    switch (b.style) {
+      case 'single': out.push([i0, i0 + w]); break;
+      case 'double':
+        out.push([i0, i0 + w], [i0 + w + gap, i0 + 2 * w + gap]);
+        break;
+      case 'triple':
+        out.push([i0, i0 + w],
+                 [i0 + w + gap, i0 + 2 * w + gap],
+                 [i0 + 2 * w + 2 * gap, i0 + 3 * w + 2 * gap]);
+        break;
+      case 'thinthick':
+        out.push([i0, i0 + w * 1.8], [i0 + w * 1.8 + gap, i0 + w * 2.4 + gap]);
+        break;
+      case 'groove':
+        out.push([i0, i0 + w * 0.45],
+                 [i0 + w * 0.45 + gap * 0.6, i0 + w * 0.9 + gap * 0.6]);
+        break;
+      case 'band': out.push([i0, i0 + w * 2.4]); break;
+      default: out.push([i0, i0 + w]);
+    }
+    return out;
+  }
+
+  /* Trace the isoline of a signed distance field at `dist` mm inside. */
+  function isoline(d, g, dist) {
+    var m = new Float32Array(d.length), aa = 1 / g.ppmm;
+    for (var i = 0; i < d.length; i++) m[i] = KC.clamp((d[i] - dist) / aa + 0.5, 0, 1);
+    KC.mask.sealEdges(m, g);
+    return KC.contours(m, g, { eps: 0.3 / g.ppmm, minArea: 0.4 });
+  }
+
+  function ringPerimeter(r) {
+    var p = 0;
+    for (var i = 0, j = r.length - 1; i < r.length; j = i++) {
+      p += Math.hypot(r[i].x - r[j].x, r[i].y - r[j].y);
+    }
+    return p;
+  }
+
+  /* Walk a closed ring at fixed arc-length steps, calling back with the point
+     and unit tangent. Used for ticks, which canvas dashes can't draw. */
+  function walkRing(r, step, fn) {
+    var acc = 0, next = step / 2;
+    for (var i = 0, j = r.length - 1; i < r.length; j = i++) {
+      var ax = r[j].x, ay = r[j].y, bx = r[i].x, by = r[i].y;
+      var len = Math.hypot(bx - ax, by - ay);
+      if (len < 1e-9) continue;
+      while (next <= acc + len) {
+        var t = (next - acc) / len;
+        fn(ax + (bx - ax) * t, ay + (by - ay) * t,
+           (bx - ax) / len, (by - ay) / len, next);
+        next += step;
+      }
+      acc += len;
+    }
+  }
+
+  /* Periodic profiles, all normalised to [-1, 1] over one cycle. */
+  function profile(kind, ph) {
+    switch (kind) {
+      case 'zigzag':  return 4 * Math.abs(ph - Math.floor(ph + 0.5)) - 1;
+      case 'scallop': return 2 * Math.abs(Math.sin(Math.PI * ph)) - 1;
+      default:        return Math.sin(2 * Math.PI * ph);
+    }
+  }
+
+  /* Push a ring sideways by a periodic amount to make a wave. The cycle count
+     is a whole number per loop, so the pattern closes seamlessly instead of
+     showing a step where the phase wraps. */
+  function displaceRing(ring, cycles, amp, kind, flip) {
+    var per = ringPerimeter(ring);
+    if (per < 1) return ring;
+    var step = Math.max(0.08, per / 700);
+    var pts = [];
+    walkRing(ring, step, function (x, y, tx, ty, sAt) {
+      var f = profile(kind, (sAt / per) * cycles) * (flip ? -1 : 1);
+      pts.push({ x: x - ty * amp * f, y: y + tx * amp * f });
+    });
+    return pts.length > 3 ? pts : ring;
+  }
+
+  function strokedBorder(state, g, d, dist) {
+    var b = state.border;
+    var polys = isoline(d, g, dist);
+    if (!polys.length) return null;
+
+    var o = ctxFor('bstroke', g);
+    var ctx = o.ctx;
+    ctx.strokeStyle = '#fff';
+    ctx.fillStyle = '#fff';
+    ctx.lineJoin = 'round';
+
+    var count = Math.max(2, Math.round(b.dashes));
+
+    polys.forEach(function (poly) {
+      [poly.outer].concat(poly.holes).forEach(function (ring) {
+        if (ring.length < 3) return;
+        var per = ringPerimeter(ring);
+        if (per < 1) return;
+        var pitch = per / count;                   // one repeat per dash
+
+        if (b.style === 'ticks') {
+          // short strokes across the outline, at right angles to it
+          ctx.lineCap = 'butt';
+          ctx.lineWidth = Math.max(0.35, b.width * 0.7) * g.ppmm;
+          var half = Math.max(b.width, b.gap * 1.2) * 0.5 * g.ppmm;
+          ctx.beginPath();
+          walkRing(ring, pitch, function (x, y, tx, ty) {
+            var nx = -ty, ny = tx;                 // outward-ish normal
+            var px = g.px(x), py = g.py(y);
+            // tangent is in mm space with y up; flip y for pixels
+            var dx = nx * half, dy = -ny * half;
+            ctx.moveTo(px - dx, py - dy);
+            ctx.lineTo(px + dx, py + dy);
+          });
+          ctx.stroke();
+          return;
+        }
+
+        if (WAVY[b.style]) {
+          var cycles = Math.max(3, Math.round(count));
+          var amp = Math.max(0.2, b.gap);
+          ctx.lineCap = 'round';
+          ctx.lineWidth = b.width * g.ppmm;
+          // a braid is the same wave twice, in antiphase
+          var passes = b.style === 'braid' ? [false, true] : [false];
+          passes.forEach(function (flip) {
+            var w = displaceRing(ring, cycles, amp, WAVY[b.style], flip);
+            if (b.style === 'wavedash') {
+              ctx.setLineDash([Math.max(0.001, pitch * 0.55 * g.ppmm),
+                               Math.max(0.001, pitch * 0.45 * g.ppmm)]);
+            }
+            ctx.beginPath();
+            ctx.moveTo(g.px(w[0].x), g.py(w[0].y));
+            for (var q = 1; q < w.length; q++) ctx.lineTo(g.px(w[q].x), g.py(w[q].y));
+            ctx.closePath();
+            ctx.stroke();
+            ctx.setLineDash([]);
+          });
+          return;
+        }
+
+        // everything else is an arc-length dash pattern along the centreline
+        var lw, pattern, cap;
+        if (b.style === 'dotted') {
+          lw = b.width; cap = 'round';
+          pattern = [0.001, pitch];                // round caps make the dots
+        } else if (b.style === 'beads') {
+          lw = b.width * 1.7; cap = 'round';
+          pattern = [0.001, pitch];
+        } else if (b.style === 'dashdot') {
+          lw = b.width; cap = 'butt';
+          var dash = pitch * 0.44, dot = Math.min(lw, pitch * 0.08), sp = (pitch - dash - dot) / 2;
+          pattern = [dash, sp, dot, sp];
+        } else {                                    // dashed
+          lw = b.width; cap = 'butt';
+          pattern = [pitch * 0.6, pitch * 0.4];
+        }
+
+        ctx.lineCap = cap;
+        ctx.lineWidth = lw * g.ppmm;
+        ctx.setLineDash(pattern.map(function (v) { return Math.max(0.001, v * g.ppmm); }));
+        ctx.beginPath();
+        ctx.moveTo(g.px(ring[0].x), g.py(ring[0].y));
+        for (var k = 1; k < ring.length; k++) ctx.lineTo(g.px(ring[k].x), g.py(ring[k].y));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    });
+
+    return KC.mask.sealEdges(KC.mask.fromCanvas(o.canvas), g);
+  }
+
   KC.borderMask = function (state, g, plate) {
     var b = state.border;
     if (b.style === 'none') return null;
@@ -148,55 +360,31 @@ window.KC = window.KC || {};
       KC.shapePath(o.ctx, b.shape, w, h, b.radius, gridTransform(g));
       o.ctx.fill();
       src = KC.mask.sealEdges(KC.mask.fromCanvas(o.canvas), g);
-      centred = true;     // band straddles the outline instead of insetting
+      centred = true;     // bands straddle the outline instead of insetting
     }
 
     var d = KC.sdf(src, g);
-    var n = d.length, out = new Float32Array(n);
-    var aa = 1 / g.ppmm;
-    var w1 = b.width;
 
-    var lo1, hi1, lo2, hi2, two = false;
-    if (centred) {
-      lo1 = -w1 / 2; hi1 = w1 / 2;
-      if (b.style === 'double') {
-        two = true;                                  // one ring either side
-        lo1 = b.gap / 2; hi1 = b.gap / 2 + w1;
-        lo2 = -(b.gap / 2 + w1); hi2 = -b.gap / 2;
-      }
-    } else {
-      lo1 = b.inset; hi1 = b.inset + w1;
-      if (b.style === 'double') {
-        two = true;
-        lo2 = b.inset + w1 + b.gap; hi2 = b.inset + w1 + b.gap + w1;
-      }
+    if (STROKED[b.style]) {
+      // centreline sits half a line width inside the nominal inset, plus the
+      // wave amplitude so the crests stay on the plate rather than clipping off
+      var room = b.width / 2 + (WAVY[b.style] ? Math.max(0.2, b.gap) : 0);
+      return strokedBorder(state, g, d, centred ? 0 : b.inset + room);
     }
-    if (b.style === 'band') { hi1 = lo1 + Math.max(w1, b.width * 2.2); }
+
+    var bands = bandsFor(b);
+    var n = d.length, out = new Float32Array(n), aa = 1 / g.ppmm;
 
     for (var i = 0; i < n; i++) {
-      var v = KC.band(d[i], lo1, hi1, aa);
-      if (two) v = Math.max(v, KC.band(d[i], lo2, hi2, aa));
+      var v = 0, dv = centred ? Math.abs(d[i]) : d[i];
+      for (var k = 0; k < bands.length; k++) {
+        var lo = bands[k][0], hi = bands[k][1];
+        if (centred) { lo = Math.max(0, lo - b.inset); hi = hi - b.inset; }
+        var t = KC.band(dv, lo, hi, aa);
+        if (t > v) v = t;
+      }
       out[i] = v;
     }
-
-    // Dashes / dots are cut out by an angular comb around the plate centre.
-    if (b.style === 'dashed' || b.style === 'dotted') {
-      var duty = b.style === 'dotted' ? 0.34 : 0.62;
-      var cnt = b.dashes;
-      for (var y = 0, k = 0; y < g.rows; y++) {
-        for (var x = 0; x < g.cols; x++, k++) {
-          if (out[k] <= 0) continue;
-          var mx = g.mmx(x), my = g.mmy(y);
-          var ph = (Math.atan2(my, mx) / (Math.PI * 2) + 1) % 1;
-          var f = (ph * cnt) % 1;
-          // soft edges on the dash so the traced contour stays smooth
-          var e = 0.07;
-          var a = Math.min(f / e, (duty - f) / e, 1);
-          out[k] *= KC.clamp(a, 0, 1);
-        }
-      }
-    }
-
     return out;
   };
 

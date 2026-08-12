@@ -9,7 +9,8 @@ No dependencies, no build step — **double-click `index.html`**.
 - **Shape** — 12 presets or draw your own outline; width, height, corner radius, thickness
 - **Sides** — front and back decorated independently; copy one to the other, or switch one off
 - **Relief** — raised, inlay (recessed or cut through), or engraved
-- **Border** — 6 styles; inset to 0 for a flush rim; can trace a different shape than the plate
+- **Border** — 16 styles: lines, dashes, dots, beads, ticks, wave, zigzag, scallop, braid;
+  inset to 0 for a flush rim; can trace a different shape than the plate
 - **Text** — 16 fonts, solid or outlined, size/spacing/rotation, multiple lines
 - **Picture** — upload an image or draw one in the built-in pad
 - **Colour** — 4 filaments, assigned freely to plate / border / text / picture

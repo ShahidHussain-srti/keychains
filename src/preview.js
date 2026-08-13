@@ -20,28 +20,34 @@ window.KC = window.KC || {};
   }
 
   /* Elements that currently exist and can be picked. */
+  /* Elements are addressed as "kind:index", or plain "hole". */
+  Preview.prototype.el = function (key) {
+    if (key === 'hole') return this.state.hole;
+    var bits = key.split(':');
+    var f = this.state.sides[this.state.activeSide];
+    var list = bits[0] === 'text' ? f.texts : f.arts;
+    return (list || [])[+bits[1]] || null;
+  };
+
   Preview.prototype.movable = function (key) {
     if (key === 'hole') return this.state.hole.enabled;   // belongs to the plate
     var f = this.state.sides[this.state.activeSide];
     if (!f.enabled) return false;
-    if (key === 'text') return !!(f.text.content || '').trim();
-    if (key === 'art') return f.art.source !== 'none';
-    return false;
-  };
-
-  /* Decoration lives on the active face; the hole is shared by both. */
-  Preview.prototype.el = function (key) {
-    return key === 'hole' ? this.state.hole : this.state.sides[this.state.activeSide][key];
+    var e = this.el(key);
+    if (!e) return false;
+    if (key.indexOf('text') === 0) return !!(e.content || '').trim();
+    return e.source !== 'none';
   };
 
   /* Resizing writes to a different field per element, with the same limits the
      sliders use so the two can never disagree. */
   var SIZE = {
-    text: { field: 'size',     min: 2, max: 40 },
-    art:  { field: 'size',     min: 3, max: 120 },
+    text: { field: 'size',     min: 2, max: 60 },
+    art:  { field: 'size',     min: 3, max: 200 },
     hole: { field: 'diameter', min: 2, max: 10 }
   };
-  Preview.prototype.sizeSpec = function (key) { return SIZE[key]; };
+  var kindOf = function (key) { return key === 'hole' ? 'hole' : key.split(':')[0]; };
+  Preview.prototype.sizeSpec = function (key) { return SIZE[kindOf(key)]; };
 
   /* The back view mirrors the plate, so the hole drawn on it moves the opposite
      way to the pointer. Decoration is drawn unmirrored, so it is unaffected. */
@@ -91,7 +97,6 @@ window.KC = window.KC || {};
     ctx.clearRect(0, 0, W, H);
 
     var t = this.transform();
-    var pal = state.colors.palette;
     var back = state.activeSide === 'back';
     var px = Math.round(W * dpr), py = Math.round(H * dpr);
 
@@ -116,11 +121,11 @@ window.KC = window.KC || {};
     /* Plate silhouette with the keyring hole already punched, so decoration
        masked against it can never bridge the hole. */
     var plate = layer('prevplate');
-    plate.g.fillStyle = pal[state.colors.base];
+    plate.g.fillStyle = state.plateColor;
     plate.g.beginPath();
     if (KC.drawPlate(plate.g, state, t)) {
       plate.g.globalCompositeOperation = 'source-in';   // recolour a bitmap outline
-      plate.g.fillStyle = pal[state.colors.base];
+      plate.g.fillStyle = state.plateColor;
       plate.g.fillRect(0, 0, W, H);
       plate.g.globalCompositeOperation = 'source-over';
     } else {
@@ -149,32 +154,37 @@ window.KC = window.KC || {};
       plateCanvas = mir.c;
     }
 
-    /* Decoration for whichever face owns it. */
+    /* Decoration for whichever face owns it: every element, in paint order. */
     var feat = layer('prevfeat');
     if (showDecor) {
-      this._border(feat.g, t, W, H, fs);
-
-      if (fs.art.source !== 'none') {
-        var tint = pal[state.colors.art];
-        var art = layer('prevart');
-        if (KC.drawArt(art.g, fs, t)) {
-          if (KC.resolveArtMode(fs) !== 'alpha') {
-            // Keep a thresholded photo readable while it is being tuned.
-            art.g.globalCompositeOperation = 'source-atop';
-            art.g.fillStyle = tint;
-            art.g.globalAlpha = 0.55;
-            art.g.fillRect(0, 0, W, H);
-            art.g.globalAlpha = 1;
-          } else {
-            art.g.globalCompositeOperation = 'source-in';
-            art.g.fillStyle = tint;
-            art.g.fillRect(0, 0, W, H);
-          }
-          art.g.globalCompositeOperation = 'source-over';
-          feat.g.drawImage(art.c, 0, 0, W, H);
+      var dFace = state.sides[decorSide];
+      KC.faceItems(dFace).forEach(function (e) {
+        if (e.kind === 'border') {
+          this._border(feat.g, t, W, H, fs);
+          return;
         }
-      }
-      KC.drawText(feat.g, fs, t, { fill: pal[state.colors.text] });
+        if (e.kind === 'text') {
+          KC.drawText(feat.g, e.item, t, { fill: e.item.color });
+          return;
+        }
+        if (e.item.source === 'none') return;
+        var art = layer('prevart');
+        if (!KC.drawArt(art.g, e.item, t)) return;
+        if (KC.resolveArtMode(e.item) !== 'alpha') {
+          // keep a thresholded photo readable while it is being tuned
+          art.g.globalCompositeOperation = 'source-atop';
+          art.g.fillStyle = e.item.color;
+          art.g.globalAlpha = 0.55;
+          art.g.fillRect(0, 0, W, H);
+          art.g.globalAlpha = 1;
+        } else {
+          art.g.globalCompositeOperation = 'source-in';
+          art.g.fillStyle = e.item.color;
+          art.g.fillRect(0, 0, W, H);
+        }
+        art.g.globalCompositeOperation = 'source-over';
+        feat.g.drawImage(art.c, 0, 0, W, H);
+      }, this);
 
       if (mirrorDecor) {
         var fm = layer('prevfeatmirror');
@@ -271,7 +281,7 @@ window.KC = window.KC || {};
 
     var sz = KC.plateSize(state);
     var key = JSON.stringify([state.shape.preset, sz.w, sz.h, state.shape.radius,
-                              fs._side, fs.border, state.colors.palette[state.colors.border],
+                              fs._side, fs.border, fs.border.color,
                               state.shape.preset === 'custom' && KC.assets.customShape ? KC.assets.customShape._rev : 0]);
 
     if (!this._ringCache || this._ringCache.key !== key) {
@@ -285,7 +295,7 @@ window.KC = window.KC || {};
       if (ring) {
         var ictx = cv.getContext('2d');
         var img = ictx.createImageData(g.cols, g.rows);
-        var rgb = KC.hexToRgb(state.colors.palette[state.colors.border]);
+        var rgb = KC.hexToRgb(fs.border.color);
         var r = rgb[0] * 255, gg = rgb[1] * 255, b = rgb[2] * 255;
         for (var i = 0; i < ring.length; i++) {
           img.data[i * 4] = r; img.data[i * 4 + 1] = gg; img.data[i * 4 + 2] = b;
@@ -309,28 +319,31 @@ window.KC = window.KC || {};
   /* Listed back-to-front, so a reverse scan picks whatever is drawn on top. */
   Preview.prototype.boxes = function (t) {
     var state = this.state, out = [];
-
-    var fs = this.face();
+    var face = state.sides[state.activeSide];
+    var ctx = this.canvas.getContext('2d');
 
     if (this.movable('hole')) {
-      var hc = KC.holeCentre(this.state), d = hc.r * 2 * t.s;
+      var hc = KC.holeCentre(state), d = hc.r * 2 * t.s;
       out.push({ key: 'hole', label: 'Keyring hole', round: true,
                  cx: t.ox + this.xSign('hole') * hc.x * t.s, cy: t.oy - hc.y * t.s,
                  w: d, h: d, rot: 0 });
     }
+    if (!face.enabled) return out;
 
-    var p = KC.artPlacement(fs, t);
-    if (p && this.movable('art')) {
-      out.push({ key: 'art', label: 'Picture', cx: p.cx, cy: p.cy, w: p.w, h: p.h,
-                 rot: -fs.art.rotation * Math.PI / 180 });
-    }
-    if (this.movable('text')) {
-      var m = this._textMetrics(t);
-      if (m) out.push({ key: 'text', label: 'Text',
-                        cx: t.ox + fs.text.x * t.s, cy: t.oy - fs.text.y * t.s,
-                        w: m.w, h: m.h, rot: -fs.text.rotation * Math.PI / 180 });
-    }
-    void state;
+    (face.arts || []).forEach(function (a, i) {
+      var p = KC.artPlacement(a, t);
+      if (!p) return;
+      out.push({ key: 'art:' + i, label: 'Picture ' + (i + 1), cx: p.cx, cy: p.cy,
+                 w: p.w, h: p.h, rot: -a.rotation * Math.PI / 180 });
+    });
+
+    (face.texts || []).forEach(function (tx, i) {
+      var L = KC.textLayout(ctx, tx, t);
+      if (!L || L.width < 4) return;
+      out.push({ key: 'text:' + i, label: 'Text ' + (i + 1),
+                 cx: t.ox + tx.x * t.s, cy: t.oy - tx.y * t.s,
+                 w: L.width + 6, h: L.height + 4, rot: -tx.rotation * Math.PI / 180 });
+    });
     return out;
   };
 
@@ -345,7 +358,7 @@ window.KC = window.KC || {};
   /* Is (x, y) on a resize handle of the current selection? */
   Preview.prototype.hitHandle = function (x, y) {
     var key = this.selected;
-    if (!key || !this.movable(key) || !SIZE[key]) return null;
+    if (!key || !this.movable(key) || !SIZE[kindOf(key)]) return null;
     var t = this.transform();
     var boxes = this.boxes(t);
     for (var i = 0; i < boxes.length; i++) {
@@ -354,8 +367,9 @@ window.KC = window.KC || {};
       var dx = x - b.cx, dy = y - b.cy;
       var c = Math.cos(-b.rot), sn = Math.sin(-b.rot);
       var lx = dx * c - dy * sn, ly = dx * sn + dy * c;
-      var al = b.key === 'text' ? this.el('text').align : 'center';
-      var off = b.key === 'text' && al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
+      var eh = this.el(b.key);
+      var al = eh && b.key.indexOf('text') === 0 ? eh.align : 'center';
+      var off = al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
       var L = off - b.w / 2, R = off + b.w / 2, T2 = -b.h / 2, B = b.h / 2;
       var pts = b.round ? [[R + 3, 0]] : [[L, T2], [R, T2], [L, B], [R, B]];
       for (var k = 0; k < pts.length; k++) {
@@ -375,8 +389,9 @@ window.KC = window.KC || {};
       var dx = x - b.cx, dy = y - b.cy;
       var c = Math.cos(-b.rot), s = Math.sin(-b.rot);
       var lx = dx * c - dy * s, ly = dx * s + dy * c;
-      var al = this.el('text').align;
-      var extra = b.key === 'text' && al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
+      var el0 = this.el(b.key);
+      var al = el0 && b.key.indexOf('text') === 0 ? el0.align : 'center';
+      var extra = al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
       if (Math.abs(lx - extra) <= b.w / 2 + 3 && Math.abs(ly) <= b.h / 2 + 3) return b.key;
     }
     return null;
@@ -394,8 +409,9 @@ window.KC = window.KC || {};
       var isSel = b.key === sel, isHot = b.key === hov;
       if (!isSel && !isHot) continue;
 
-      var al2 = this.el('text').align;
-      var off = b.key === 'text' && al2 !== 'center' ? (al2 === 'left' ? b.w / 2 : -b.w / 2) : 0;
+      var elh = this.el(b.key);
+      var al2 = elh && b.key.indexOf('text') === 0 ? elh.align : 'center';
+      var off = al2 !== 'center' ? (al2 === 'left' ? b.w / 2 : -b.w / 2) : 0;
 
       ctx.save();
       ctx.translate(b.cx, b.cy);
@@ -468,7 +484,7 @@ window.KC = window.KC || {};
       // grabbing a corner handle resizes instead of moving
       var h = self.hitHandle(p.x, p.y);
       if (h) {
-        var spec = SIZE[h.key];
+        var spec = SIZE[kindOf(h.key)];
         self.onBeginEdit();
         if (h.key === 'hole') self.freeHole();
         self.resize = {

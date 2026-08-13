@@ -54,7 +54,29 @@ window.KC = window.KC || {};
 
     // mono
     { key: 'mono',      name: 'Monospace',   group: 'Mono',   css: '"SF Mono",Menlo,Consolas,"Courier New",monospace' },
-    { key: 'typewriter',name: 'Typewriter',  group: 'Mono',   css: '"American Typewriter","Courier New",monospace' }
+    { key: 'typewriter',name: 'Typewriter',  group: 'Mono',   css: '"American Typewriter","Courier New",monospace' },
+
+    /* Motorcycle marques all use commissioned typefaces that are licensed, not
+       installed, and cannot be shipped here. Each stack asks for the real family
+       first — so it is used if you happen to own it — then falls back to the
+       closest face macOS provides. Names say "-ish" because that is what they
+       are: look-alikes, not the originals. */
+    { key: 'moto-cruiser', name: 'Cruiser Slab (H-D-ish)', group: 'Motorcycle style',
+      css: '"Harley Script",Superclarendon,"Rockwell Extra Bold",Rockwell,"Bookman Old Style",serif' },
+    { key: 'moto-race',    name: 'Race Italic (Ducati-ish)', group: 'Motorcycle style',
+      css: '"Ducati Bold",Futura,"Avenir Next Condensed","Century Gothic",sans-serif' },
+    { key: 'moto-condensed', name: 'Race Condensed (KTM-ish)', group: 'Motorcycle style',
+      css: '"KTM Sans","Avenir Next Condensed","Arial Narrow",Impact,sans-serif' },
+    { key: 'moto-touring', name: 'Touring Sans (BMW-ish)', group: 'Motorcycle style',
+      css: '"BMW Motorrad","Helvetica Neue",Helvetica,Arial,sans-serif' },
+    { key: 'moto-geo',     name: 'Geometric (Honda-ish)', group: 'Motorcycle style',
+      css: '"Honda Sans",Futura,"Century Gothic","Avenir Next",sans-serif' },
+    { key: 'moto-heritage', name: 'Heritage Serif (Triumph-ish)', group: 'Motorcycle style',
+      css: '"Triumph Sans",Cochin,Baskerville,"Hoefler Text",Georgia,serif' },
+    { key: 'moto-script',  name: 'Retro Script (Indian-ish)', group: 'Motorcycle style',
+      css: '"Indian Script","Snell Roundhand","Savoye LET","Brush Script MT",cursive' },
+    { key: 'moto-enduro',  name: 'Enduro Stencil', group: 'Motorcycle style',
+      css: 'Stencil,"Stencil Std","Arial Black",Impact,fantasy' }
   ];
 
   /* v1/v2 designs stored the font as an index into this exact order. */
@@ -80,13 +102,28 @@ window.KC = window.KC || {};
     ['custom', 'Custom drawing']
   ];
 
-  /* Which parts can be tinted, in the order they are listed in the colour panel. */
-  KC.PARTS = [
-    ['base', 'Keychain'], ['border', 'Border'], ['text', 'Text'], ['art', 'Picture']
-  ];
+  /* ── element defaults ───────────────────────────────────────────── */
+  var uid = 0;
+  KC.newId = function (p) { return p + (Date.now().toString(36)) + (uid++).toString(36); };
 
-  /* One face's worth of decoration. Both sides of the keychain hold one of
-     these, edited independently. */
+  KC.newText = function (opts) {
+    return Object.assign({
+      id: KC.newId('t'), content: 'HELLO', font: 'grotesk', bold: true, italic: false,
+      style: 'fill', strokeWidth: 0.8, size: 8, tracking: 0.4, lineHeight: 1.15,
+      rotation: 0, align: 'center', x: 0, y: 0, color: '#16181d'
+    }, opts || {});
+  };
+
+  KC.newArt = function (opts) {
+    return Object.assign({
+      id: KC.newId('a'), source: 'none', mode: 'auto', threshold: 0.5, size: 15,
+      rotation: 0, mirror: false, x: -17, y: 0, color: '#4b8ef0'
+    }, opts || {});
+  };
+
+  /* One face's worth of decoration: any number of text boxes and pictures, each
+     carrying its own colour. How many colours a design needs is therefore up to
+     whoever makes it — one per body, at most. */
   KC.faceDefaults = function (which) {
     return {
       enabled: which === 'front',
@@ -95,51 +132,77 @@ window.KC = window.KC || {};
       // surprising when only one face is decorated.
       inlayThrough: false, inlayDepth: 1.2,
       border: { style: 'single', shape: 'follow', inset: 2, width: 1.2, gap: 1.2,
-                dashes: 24, radius: 4 },
-      text:   { content: which === 'front' ? 'HELLO' : '', font: 'grotesk', bold: true,
-                italic: false, style: 'fill', strokeWidth: 0.8, size: 8, tracking: 0.4,
-                lineHeight: 1.15, rotation: 0, align: 'center', x: 0, y: 0 },
-      art:    { source: 'none', mode: 'auto', threshold: 0.5, size: 15, rotation: 0,
-                mirror: false, x: -17, y: 0 }
+                dashes: 24, radius: 4, color: '#16181d' },
+      texts: which === 'front' ? [KC.newText()] : [],
+      arts: [],
+      textIdx: 0, artIdx: 0
     };
   };
 
   KC.defaults = function () {
     return {
       shape:  { preset: 'rect', width: 58, height: 30, radius: 6, thickness: 3 },
+      plateColor: '#e9edf2',
       layerHeight: 0.2,
       hole:   { enabled: true, diameter: 4, margin: 4, position: 'tl', x: 0, y: 0 },
       sides:  { front: KC.faceDefaults('front'), back: KC.faceDefaults('back') },
       activeSide: 'front',
-      colors: { palette: ['#e9edf2', '#16181d', '#e0a63a', '#4b8ef0'],
-                base: 0, border: 1, text: 1, art: 2 },
       quality: 14,
       name: 'keychain'
     };
   };
 
-  /* Bitmaps live outside the serialisable state. The plate outline is shared;
-     pictures and doodles belong to one face. */
-  KC.assets = {
-    customShape: null,
-    front: { image: null, drawing: null },
-    back:  { image: null, drawing: null }
+  /* Bitmaps live outside the serialisable state, keyed by the picture's id.
+     The plate outline is shared by both faces. */
+  KC.assets = { customShape: null, images: {}, drawings: {} };
+
+  KC.artBitmap = function (art) {
+    if (!art) return null;
+    if (art.source === 'image') return KC.assets.images[art.id] || null;
+    if (art.source === 'draw') return KC.assets.drawings[art.id] || null;
+    return null;
   };
 
-  /* A state-shaped view of one face: `shape`, `hole` and `colors` fall through
+  /* Every element on a face, bottom to top: the border first, then pictures,
+     then text. Later entries win where they overlap. */
+  KC.faceItems = function (face) {
+    var out = [];
+    if (face.border.style !== 'none') out.push({ kind: 'border', item: face.border });
+    (face.arts || []).forEach(function (a, i) { out.push({ kind: 'art', item: a, index: i }); });
+    (face.texts || []).forEach(function (t, i) { out.push({ kind: 'text', item: t, index: i }); });
+    return out;
+  };
+
+  /* Colours actually used by a design, in a stable order. */
+  KC.coloursUsed = function (state) {
+    var seen = [], add = function (c) {
+      c = (c || '#000000').toUpperCase();
+      if (seen.indexOf(c) < 0) seen.push(c);
+    };
+    add(state.plateColor);
+    ['front', 'back'].forEach(function (w) {
+      var f = state.sides[w];
+      if (!f.enabled || f.relief === 'engraved') return;
+      KC.faceItems(f).forEach(function (e) {
+        if (e.kind === 'text' && !(e.item.content || '').trim()) return;
+        if (e.kind === 'art' && e.item.source === 'none') return;
+        add(e.item.color);
+      });
+    });
+    return seen;
+  };
+
+  /* A state-shaped view of one face:  /* A state-shaped view of one face: `shape`, `hole` and `colors` fall through
      to the real state, while `text`/`art`/`border` come from that side. Lets
      every rasteriser stay face-agnostic. */
   KC.faceState = function (state, which) {
     var f = state.sides[which];
     var v = Object.create(state);
     v.border = f.border;
-    v.text = f.text;
-    v.art = f.art;
     v.relief = f.relief;
     v.reliefHeight = f.reliefHeight;
     v.inlayThrough = f.inlayThrough;
     v.inlayDepth = f.inlayDepth;
-    v._assets = KC.assets[which];
     v._side = which;
     return v;
   };

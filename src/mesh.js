@@ -11,7 +11,8 @@ window.KC = window.KC || {};
   /* Accumulates triangles for one colour. */
   function Acc(key, label, colorIndex, color) {
     this.key = key; this.label = label;
-    this.colorIndex = colorIndex; this.color = color;
+    this.colorIndex = (colorIndex || color || '#000000').toUpperCase();
+    this.color = color;
     this.pos = []; this.idx = [];
   }
 
@@ -84,44 +85,43 @@ window.KC = window.KC || {};
     return Math.abs(v) / 6;   // mm³
   }
 
-  /* Decoration masks for one face, colour-separated and clipped to the plate.
-     The back face is mirrored so its artwork reads correctly once flipped. */
-  function faceMasks(state, which, g, plateSolid) {
-    var fs = KC.faceState(state, which);
-    if (!state.sides[which].enabled) {
-      return { border: null, text: null, art: null, all: null, raw: {} };
+  /* Every element on one face, colour-separated and clipped to the plate. The
+     back face is mirrored so its artwork reads correctly once flipped.
+     Where elements overlap, the one drawn on top keeps the pixel. */
+  function faceElements(state, which, g, plateSolid) {
+    var face = state.sides[which];
+    var out = { list: [], all: null, raw: [] };
+    if (!face.enabled) return out;
+
+    var mirror = which === 'back';
+    var plate = KC.plateMask(KC.faceState(state, which), g);
+
+    KC.faceItems(face).forEach(function (e) {
+      var m = null;
+      if (e.kind === 'border') m = KC.borderMask(KC.faceState(state, which), g, plate);
+      else if (e.kind === 'text') m = KC.textMask(e.item, g);
+      else m = KC.artMask(e.item, g);
+      if (!m) return;
+      if (mirror) m = KC.mirrorMaskX(m, g);
+      out.raw.push({ kind: e.kind, index: e.index, mask: m });
+      out.list.push({ kind: e.kind, index: e.index, item: e.item,
+                      color: e.item.color, mask: KC.mask.and(m, plateSolid) });
+    });
+
+    /* Topmost wins: walk down the stack subtracting everything above. */
+    var claimed = null;
+    for (var i = out.list.length - 1; i >= 0; i--) {
+      var full = out.list[i].mask;
+      out.list[i].mask = KC.mask.sub(full, claimed);
+      claimed = KC.mask.union(claimed, full);
     }
+    out.list = out.list.filter(function (e) { return e.mask && !KC.mask.empty(e.mask); });
 
-    var plate = KC.plateMask(fs, g);
-    var border = KC.borderMask(fs, g, plate);
-    var text = KC.textMask(fs, g);
-    var art = KC.artMask(fs, g);
-
-    if (which === 'back') {
-      border = KC.mirrorMaskX(border, g);
-      text = KC.mirrorMaskX(text, g);
-      art = KC.mirrorMaskX(art, g);
-    }
-
-    var raw = { text: text, art: art };
-    if (border) border = KC.mask.and(border, plateSolid);
-    if (text) text = KC.mask.and(text, plateSolid);
-    if (art) art = KC.mask.and(art, plateSolid);
-
-    // Priority so colours never share a pixel: text > picture > border.
-    if (art && text) art = KC.mask.sub(art, text);
-    if (border && text) border = KC.mask.sub(border, text);
-    if (border && art) border = KC.mask.sub(border, art);
-
-    var all = null;
-    all = KC.mask.union(all, border);
-    all = KC.mask.union(all, art);
-    all = KC.mask.union(all, text);
-
-    return { border: border, text: text, art: art, all: all, raw: raw };
+    out.list.forEach(function (e) { out.all = KC.mask.union(out.all, e.mask); });
+    return out;
   }
 
-  /* ── the whole model ────────────────────────────────────────────── */
+  /* ── the whole model ────────────────────────────────────────────── */  /* ── the whole model ────────────────────────────────────────────── */
   KC.buildModel = function (state, ppmm) {
     var g = KC.makeGrid(state, ppmm);
     var sh = state.shape;
@@ -138,13 +138,12 @@ window.KC = window.KC || {};
     var plateSolid = KC.mask.sub(plate, hole);
 
     // Raw element masks, each clipped to the plate.
-    var pal = state.colors.palette;
     var parts = [];
     var copts = { eps: 0.55 / g.ppmm, minArea: 0.03 };
 
     /* Decoration and relief style are both per face now. */
-    var F = { front: faceMasks(state, 'front', g, plateSolid),
-              back:  faceMasks(state, 'back',  g, plateSolid) };
+    var F = { front: faceElements(state, 'front', g, plateSolid),
+              back:  faceElements(state, 'back',  g, plateSolid) };
     var live = { front: !!F.front.all, back: !!F.back.all };
     var FS = { front: KC.faceState(state, 'front'), back: KC.faceState(state, 'back') };
     var R = { front: KC.faceRelief(FS.front), back: KC.faceRelief(FS.back) };
@@ -167,10 +166,11 @@ window.KC = window.KC || {};
     ['front', 'back'].forEach(function (w) {
       var o = w === 'front' ? 'back' : 'front';
       if (!(live[w] && R[w].through && live[o])) return;
-      ['border', 'text', 'art', 'all'].forEach(function (k) {
-        if (F[o][k]) F[o][k] = KC.mask.sub(F[o][k], F[w].all);
-      });
-      if (!F[o].all || KC.mask.empty(F[o].all)) live[o] = false;
+      F[o].list.forEach(function (e) { e.mask = KC.mask.sub(e.mask, F[w].all); });
+      F[o].list = F[o].list.filter(function (e) { return !KC.mask.empty(e.mask); });
+      F[o].all = null;
+      F[o].list.forEach(function (e) { F[o].all = KC.mask.union(F[o].all, e.mask); });
+      if (!F[o].all) live[o] = false;
     });
 
     var cut = { front: live.front ? R.front.cut : 0, back: live.back ? R.back.cut : 0 };
@@ -207,7 +207,7 @@ window.KC = window.KC || {};
     });
 
     /* ── base plate, as bands between every z where something changes ── */
-    var baseAcc = new Acc('base', 'Keychain', state.colors.base, pal[state.colors.base]);
+    var baseAcc = new Acc('base', 'Keychain', state.plateColor, state.plateColor);
     var cuts = [0, T];
     remove.forEach(function (r) { cuts.push(r.lo, r.hi); });
     cuts = cuts.filter(function (z) { return z >= -1e-9 && z <= T + 1e-9; })
@@ -225,17 +225,17 @@ window.KC = window.KC || {};
     }
     if (baseAcc.idx.length) parts.push(baseAcc.finish());
 
-    /* ── coloured detail bodies ─────────────────────────────────────── */
+    /* ── coloured detail bodies, one per element ────────────────────── */
+    var NAME = { border: 'Border', text: 'Text', art: 'Picture' };
     ['front', 'back'].forEach(function (w) {
       if (!live[w] || !span[w]) return;
-      var m2 = F[w], z = span[w];
-      [['border', 'Border', m2.border, state.colors.border],
-       ['art', 'Picture', m2.art, state.colors.art],
-       ['text', 'Text', m2.text, state.colors.text]].forEach(function (row) {
-        if (!row[2] || KC.mask.empty(row[2])) return;
-        var label = row[1] + (live.front && live.back ? ' (' + w + ')' : '');
-        var acc = new Acc(row[0] + '-' + w, label, row[3], pal[row[3]]);
-        acc.addPolys(KC.contours(row[2], g, copts), z[0], z[1]);
+      var z = span[w];
+      F[w].list.forEach(function (e) {
+        var n = e.kind === 'border' ? '' : ' ' + (e.index + 1);
+        var label = NAME[e.kind] + n + (live.front && live.back ? ' (' + w + ')' : '');
+        var key = e.kind + (e.kind === 'border' ? '' : (e.index + 1)) + '-' + w;
+        var acc = new Acc(key, label, e.color, e.color);
+        acc.addPolys(KC.contours(e.mask, g, copts), z[0], z[1]);
         if (acc.idx.length) parts.push(acc.finish());
       });
     });
@@ -279,19 +279,34 @@ window.KC = window.KC || {};
           ' mm wide — under two 0.4 mm extrusion widths, so it may print poorly. Try a bolder font or a thicker border.' });
       }
 
+      /* Per element: is it off the plate, clipped, or too small to render? */
       var face = state.sides[which];
-      var tr = m.raw.text, ar = m.raw.art;
-      if (tr && !KC.mask.empty(tr) && (!m.text || KC.mask.empty(m.text))) {
-        warn.push({ level: 'bad', msg: 'The text' + tag + ' sits entirely off the plate.' });
-      } else if (tr && m.text && KC.mask.area(m.text, g) < KC.mask.area(tr, g) * 0.97) {
-        warn.push({ level: 'warn', msg: 'Some of the text' + tag + ' is clipped by the plate edge or the keyring hole.' });
-      }
-      if (ar && !KC.mask.empty(ar) && (!m.art || KC.mask.empty(m.art))) {
-        warn.push({ level: 'bad', msg: 'The picture' + tag + ' sits entirely off the plate.' });
-      }
-      if ((face.text.content || '').trim() && (!tr || KC.mask.empty(tr))) {
-        warn.push({ level: 'warn', msg: 'Text' + tag + ' is too small to render at this size.' });
-      }
+      var placed = {};
+      m.list.forEach(function (e) { placed[e.kind + (e.index || 0)] = e.mask; });
+
+      m.raw.forEach(function (r) {
+        var live2 = placed[r.kind + (r.index || 0)];
+        var what = r.kind === 'text' ? 'Text' : r.kind === 'art' ? 'Picture' : 'The border';
+        var n = r.kind === 'border' ? '' : ' ' + ((r.index || 0) + 1);
+        if (!live2 || KC.mask.empty(live2)) {
+          if (r.kind !== 'border') {
+            warn.push({ level: 'bad', msg: what + n + tag +
+              ' sits entirely off the plate, or is hidden behind something on top of it.' });
+          }
+        } else if (KC.mask.area(live2, g) < KC.mask.area(r.mask, g) * 0.97) {
+          warn.push({ level: 'warn', msg: what + n + tag +
+            ' is partly clipped by the plate edge, the keyring hole, or an element above it.' });
+        }
+      });
+
+      (face.texts || []).forEach(function (tx, i) {
+        if (!(tx.content || '').trim()) return;
+        var got = m.raw.some(function (r) { return r.kind === 'text' && r.index === i; });
+        if (!got) {
+          warn.push({ level: 'warn', msg: 'Text ' + (i + 1) + tag +
+            ' is too small to render at this size.' });
+        }
+      });
     });
 
     /* Depth / layer checks, per face. */

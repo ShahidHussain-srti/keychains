@@ -447,8 +447,7 @@ window.KC = window.KC || {};
   };
 
   /* Also used by the preview, hence the colour/stroke parameters. */
-  KC.drawText = function (ctx, state, t, style) {
-    var tx = state.text;
+  KC.drawText = function (ctx, tx, t, style) {
     var L = KC.textLayout(ctx, tx, t);
     if (!L) return null;
 
@@ -490,42 +489,35 @@ window.KC = window.KC || {};
     ctx.textAlign = prev;
   }
 
-  KC.textMask = function (state, g) {
-    if (!(state.text.content || '').trim()) return null;
+  KC.textMask = function (tx, g) {
+    if (!(tx.content || '').trim()) return null;
     var o = ctxFor('text', g);
-    var ok = KC.drawText(o.ctx, state, gridTransform(g), { fill: '#fff' });
+    var ok = KC.drawText(o.ctx, tx, gridTransform(g), { fill: '#fff' });
     if (!ok) return null;
     return KC.mask.sealEdges(KC.mask.fromCanvas(o.canvas), g);
   };
 
   /* ── picture / drawing ──────────────────────────────────────────── */
-  KC.artSource = function (state) {
-    var a = state._assets || KC.assets.front;
-    if (state.art.source === 'image') return a.image;
-    if (state.art.source === 'draw') return a.drawing;
-    return null;
-  };
-
   /* Places the bitmap; returns the device-space box it occupies. */
-  KC.artPlacement = function (state, t) {
-    var src = KC.artSource(state);
+  KC.artPlacement = function (art, t) {
+    var src = KC.artBitmap(art);
     if (!src) return null;
     if (src._bbox === undefined) src._bbox = KC.contentBBox(src);
     var bb = src._bbox;
     if (!bb) return null;
-    var k = state.art.size * t.s / Math.max(bb.w, bb.h);
+    var k = art.size * t.s / Math.max(bb.w, bb.h);
     return { src: src, bb: bb, k: k,
              w: bb.w * k, h: bb.h * k,
-             cx: t.ox + state.art.x * t.s, cy: t.oy - state.art.y * t.s };
+             cx: t.ox + art.x * t.s, cy: t.oy - art.y * t.s };
   };
 
-  KC.drawArt = function (ctx, state, t) {
-    var p = KC.artPlacement(state, t);
+  KC.drawArt = function (ctx, art, t) {
+    var p = KC.artPlacement(art, t);
     if (!p) return false;
     ctx.save();
     ctx.translate(p.cx, p.cy);
-    ctx.rotate(-state.art.rotation * Math.PI / 180);
-    ctx.scale(state.art.mirror ? -p.k : p.k, p.k);
+    ctx.rotate(-art.rotation * Math.PI / 180);
+    ctx.scale(art.mirror ? -p.k : p.k, p.k);
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(p.src, p.bb.x, p.bb.y, p.bb.w, p.bb.h, -p.bb.w / 2, -p.bb.h / 2, p.bb.w, p.bb.h);
     ctx.restore();
@@ -534,11 +526,10 @@ window.KC = window.KC || {};
 
   /* Decide how to turn pixels into a silhouette. Uploaded logos are usually
      either transparent PNGs or dark-on-white line art. */
-  function resolveMode(state) {
-    var mode = state.art.mode;
-    if (state.art.source === 'draw') return 'alpha';
-    if (mode !== 'auto') return mode;
-    var src = (state._assets || KC.assets.front).image;
+  KC.resolveArtMode = function (art) {
+    if (art.source === 'draw') return 'alpha';
+    if (art.mode !== 'auto') return art.mode;
+    var src = KC.assets.images[art.id];
     if (!src) return 'alpha';
     if (src._hasAlpha == null) {
       var c = document.createElement('canvas');
@@ -550,24 +541,22 @@ window.KC = window.KC || {};
       src._hasAlpha = transparent > (w * h) * 0.02;
     }
     return src._hasAlpha ? 'alpha' : 'dark';
-  }
-  KC.resolveArtMode = resolveMode;
+  };
 
-  KC.artMask = function (state, g) {
-    var src = KC.artSource(state);
-    if (!src) return null;
+  KC.artMask = function (art, g) {
+    if (!KC.artBitmap(art)) return null;
 
     var o = ctxFor('art', g);
-    if (!KC.drawArt(o.ctx, state, gridTransform(g))) return null;
+    if (!KC.drawArt(o.ctx, art, gridTransform(g))) return null;
 
-    var mode = resolveMode(state);
+    var mode = KC.resolveArtMode(art);
     var img = o.ctx.getImageData(0, 0, g.cols, g.rows).data;
     var n = g.cols * g.rows, out = new Float32Array(n);
 
     if (mode === 'alpha') {
       for (var i = 0; i < n; i++) out[i] = img[i * 4 + 3] / 255;
     } else {
-      var thr = state.art.threshold, soft = 0.09, dark = (mode === 'dark');
+      var thr = art.threshold, soft = 0.09, dark = (mode === 'dark');
       for (var j = 0; j < n; j++) {
         var a = img[j * 4 + 3] / 255;
         if (a <= 0.004) { out[j] = 0; continue; }

@@ -40,73 +40,112 @@
       g.appendChild(o);
     });
 
-    var sw = $('#swatches');
-    state.colors.palette.forEach(function (c, i) {
-      var d = document.createElement('div');
-      d.className = 'sw';
-      d.innerHTML = '<input type="color" aria-label="Filament colour ' + (i + 1) +
-                    '" value="' + c + '"><span>' + (i + 1) + '</span>';
-      $('input', d).addEventListener('input', function (e) {
-        beginEdit(450);
-        state.colors.palette[i] = e.target.value;
-        paintAssign();
-        preview.invalidateBorder();
-        apply();
+  }
+
+  /* One colour per element, so the count is whatever the design needs. */
+  function paintColours() {
+    var used = KC.coloursUsed(state);
+    var box = $('#used-colours');
+    if (box) {
+      box.innerHTML = '';
+      used.forEach(function (c) {
+        var d = document.createElement('div');
+        d.className = 's';
+        d.style.background = c;
+        d.title = c;
+        box.appendChild(d);
       });
-      sw.appendChild(d);
-    });
-
-    var as = $('#assign');
-    KC.PARTS.forEach(function (p) {
-      var row = document.createElement('div');
-      row.className = 'arow';
-      row.innerHTML = '<span>' + p[1] + '</span><div class="pick"></div>';
-      var pick = $('.pick', row);
-      for (var i = 0; i < 4; i++) {
-        (function (idx) {
-          var b = document.createElement('button');
-          b.dataset.part = p[0];
-          b.dataset.idx = idx;
-          b.title = 'Colour ' + (idx + 1);
-          b.addEventListener('click', function () {
-            beginEdit(0);
-            state.colors[p[0]] = idx;
-            paintAssign();
-            preview.invalidateBorder();
-            apply();
-          });
-          pick.appendChild(b);
-        })(i);
-      }
-      as.appendChild(row);
-    });
-    paintAssign();
+    }
+    var n = used.length;
+    $('#color-count').textContent = n + (n === 1 ? ' colour' : ' colours') + ' in use — ' +
+      (n === 1 ? 'prints on any machine.'
+               : n + ' filaments, or ' + (n - 1) + ' manual swap' + (n === 2 ? '' : 's') + '.');
   }
 
-  function paintAssign() {
-    $$('#assign .pick button').forEach(function (b) {
-      var idx = +b.dataset.idx;
-      b.style.background = state.colors.palette[idx];
-      b.classList.toggle('on', state.colors[b.dataset.part] === idx);
-    });
-    $$('#swatches .sw input').forEach(function (inp, i) { inp.value = state.colors.palette[i]; });
+  /* ── element lists ──────────────────────────────────────────────── */
+  function faceNow() { return state.sides[state.activeSide]; }
 
-    // Count what is in use across both faces, not just the one on screen.
-    var used = {};
-    used[state.colors.base] = 1;
-    ['front', 'back'].forEach(function (w) {
-      var f = state.sides[w];
-      if (!f.enabled || f.relief === 'engraved') return;   // a recess has no colour
-      if (f.border.style !== 'none') used[state.colors.border] = 1;
-      if ((f.text.content || '').trim()) used[state.colors.text] = 1;
-      if (f.art.source !== 'none') used[state.colors.art] = 1;
+  function paintLists() {
+    var f = faceNow();
+    [['text', '#text-list', f.texts, f.textIdx],
+     ['art', '#art-list', f.arts, f.artIdx]].forEach(function (row) {
+      var box = $(row[1]);
+      if (!box) return;
+      box.innerHTML = '';
+      (row[2] || []).forEach(function (item, i) {
+        var b = document.createElement('button');
+        b.className = 'itemrow' + (i === row[3] ? ' on' : '');
+        b.type = 'button';
+        var label = row[0] === 'text'
+          ? ((item.content || '').split('\n')[0] || '(empty)')
+          : (item.source === 'none' ? '(empty)' : item.source === 'draw' ? 'drawing' : 'image');
+        b.innerHTML = '<span class="dot"></span><span class="txt"></span>' +
+                      '<span class="num">' + (i + 1) + '</span>';
+        $('.dot', b).style.background = item.color;
+        $('.txt', b).textContent = label;
+        b.addEventListener('click', function () {
+          f[row[0] === 'text' ? 'textIdx' : 'artIdx'] = i;
+          preview.selected = row[0] + ':' + i;
+          refresh();
+          apply();
+        });
+        box.appendChild(b);
+      });
     });
-    var n = Object.keys(used).length;
-    $('#color-count').textContent = n + (n === 1 ? ' filament' : ' filaments') +
-      ' in use' + (n > 1 ? ' — needs a multi-material printer or manual swaps.' : '.');
+
+    var f2 = faceNow();
+    var te = $('#text-editor'), ae = $('#art-editor');
+    if (te) te.hidden = !(f2.texts || []).length;
+    if (ae) ae.hidden = !(f2.arts || []).length;
+    $('#btn-del-text').disabled = !(f2.texts || []).length;
+    $('#btn-del-art').disabled = !(f2.arts || []).length;
   }
 
-  /* ── undo / redo ────────────────────────────────────────────────────
+  function bindLists() {
+    $('#btn-add-text').addEventListener('click', function () {
+      beginEdit(0);
+      var f = faceNow();
+      var last = f.texts[f.texts.length - 1];
+      f.texts.push(KC.newText(last ? { content: '', font: last.font, size: last.size,
+                                       color: last.color, x: last.x,
+                                       y: last.y - last.size * 1.4 } : null));
+      f.textIdx = f.texts.length - 1;
+      preview.selected = 'text:' + f.textIdx;
+      refresh(); apply();
+    });
+
+    $('#btn-del-text').addEventListener('click', function () {
+      var f = faceNow();
+      if (!f.texts.length) return;
+      beginEdit(0);
+      f.texts.splice(f.textIdx, 1);
+      f.textIdx = Math.max(0, Math.min(f.textIdx, f.texts.length - 1));
+      preview.selected = null;
+      refresh(); apply();
+    });
+
+    $('#btn-add-art').addEventListener('click', function () {
+      beginEdit(0);
+      var f = faceNow();
+      f.arts.push(KC.newArt());
+      f.artIdx = f.arts.length - 1;
+      preview.selected = 'art:' + f.artIdx;
+      refresh(); apply();
+    });
+
+    $('#btn-del-art').addEventListener('click', function () {
+      var f = faceNow();
+      if (!f.arts.length) return;
+      beginEdit(0);
+      var gone = f.arts.splice(f.artIdx, 1)[0];
+      if (gone) { delete KC.assets.images[gone.id]; delete KC.assets.drawings[gone.id]; }
+      f.artIdx = Math.max(0, Math.min(f.artIdx, f.arts.length - 1));
+      preview.selected = null;
+      refresh(); apply();
+    });
+  }
+
+  /* ── undo / redo ─  /* ── undo / redo ────────────────────────────────────────────────────
      The whole design is small and JSON-safe, so history is just a stack of
      snapshots. A burst of changes from dragging one slider is coalesced into a
      single step: the pre-edit snapshot is captured once at the start of the
@@ -118,15 +157,18 @@
     return {
       state: JSON.stringify(state),
       assets: { customShape: KC.assets.customShape,
-                fImage: KC.assets.front.image, fDraw: KC.assets.front.drawing,
-                bImage: KC.assets.back.image,  bDraw: KC.assets.back.drawing }
+                images: Object.assign({}, KC.assets.images),
+                drawings: Object.assign({}, KC.assets.drawings) }
     };
   }
 
+  function sameMap(a, b) {
+    var ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every(function (k) { return a[k] === b[k]; });
+  }
   function assetsEqual(a) {
     return a.customShape === KC.assets.customShape &&
-           a.fImage === KC.assets.front.image && a.fDraw === KC.assets.front.drawing &&
-           a.bImage === KC.assets.back.image  && a.bDraw === KC.assets.back.drawing;
+           sameMap(a.images, KC.assets.images) && sameMap(a.drawings, KC.assets.drawings);
   }
 
   function restore(snap) {
@@ -135,10 +177,8 @@
     Object.keys(state).forEach(function (k) { if (!(k in s)) delete state[k]; });
     Object.keys(s).forEach(function (k) { state[k] = s[k]; });
     KC.assets.customShape = snap.assets.customShape;
-    KC.assets.front.image = snap.assets.fImage;
-    KC.assets.front.drawing = snap.assets.fDraw;
-    KC.assets.back.image = snap.assets.bImage;
-    KC.assets.back.drawing = snap.assets.bDraw;
+    KC.assets.images = Object.assign({}, snap.assets.images);
+    KC.assets.drawings = Object.assign({}, snap.assets.drawings);
     preview.invalidateBorder();
     refresh();
     apply();
@@ -220,7 +260,14 @@
      A `~.` prefix means "the side currently being edited", so one set of
      controls drives whichever face is selected. */
   function P(path) {
-    return path.charAt(0) === '~' ? 'sides.' + state.activeSide + path.slice(1) : path;
+    var side = state.activeSide, f = state.sides[side];
+    if (path.indexOf('~t.') === 0) {
+      return 'sides.' + side + '.texts.' + (f.textIdx || 0) + '.' + path.slice(3);
+    }
+    if (path.indexOf('~a.') === 0) {
+      return 'sides.' + side + '.arts.' + (f.artIdx || 0) + '.' + path.slice(3);
+    }
+    return path.charAt(0) === '~' ? 'sides.' + side + path.slice(1) : path;
   }
 
   function coerce(path, raw) {
@@ -249,8 +296,10 @@
       var ev = (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'color')
         ? 'change' : 'input';
       el.addEventListener(ev, function () {
+        if (KC.get(state, P(path)) === undefined) return;   // no such element selected
         // Sliders and typing coalesce into one undo step; discrete pickers don't.
-        var continuous = el.type === 'range' || el.tagName === 'TEXTAREA' || el.type === 'text';
+        var continuous = el.type === 'range' || el.tagName === 'TEXTAREA' ||
+                         el.type === 'text' || el.type === 'color';
         beginEdit(continuous ? 450 : 0);
         var v = el.type === 'checkbox' ? el.checked : el.value;
         KC.set(state, P(path), coerce(path, v));
@@ -272,10 +321,11 @@
       var path = el.dataset.bind;
       var v = KC.get(state, P(path));
       if (el.classList.contains('seg')) { syncSeg(el, path); return; }
+      if (v === undefined) return;
       if (el.type === 'checkbox') el.checked = !!v;
       else el.value = v;
     });
-    paintAssign();
+    paintColours();
   }
 
   /* Value read-outs. */
@@ -289,6 +339,7 @@
   function labels() {
     $$('[data-val]').forEach(function (el) {
       var v = KC.get(state, P(el.dataset.val));
+      if (v === undefined) { el.textContent = ''; return; }
       var f = FMT[el.dataset.fmt || 'mm'] || FMT.mm;
       el.textContent = typeof v === 'number' ? f(v) : String(v);
     });
@@ -440,13 +491,14 @@
     updateRanges();
     visibility();
     labels();
+    paintLists();
     // Keep segmented toggles honest even if state changed without a refresh().
     // Safe to do on every pass: they are buttons, so there is no caret or
     // in-progress input to disturb.
     $$('[data-bind]').forEach(function (el) {
       if (el.classList.contains('seg')) syncSeg(el, el.dataset.bind);
     });
-    paintAssign();
+    paintColours();
     paintSide();
     // The preview and the mesh are independent; a hiccup in one must not stop
     // the other, or the exported file silently stops tracking the design.
@@ -488,7 +540,7 @@
     $$('.panel').forEach(function (pnl) {
       var h = $('h2', pnl);
       if (!h) return;
-      var perFace = /^(Border|Text|Picture)/.test(h.textContent);
+      var perFace = /^(Border|Text|Pictures?)/.test(h.textContent);
       if (perFace) pnl.style.opacity = f.enabled ? '' : '0.45';
     });
 
@@ -511,11 +563,22 @@
     $('#btn-dup-side').addEventListener('click', function () {
       beginEdit(0);
       var from = state.activeSide, to = other(from);
-      var src = state.sides[from];
-      state.sides[to] = JSON.parse(JSON.stringify(src));
-      state.sides[to].enabled = true;
-      KC.assets[to].image = KC.assets[from].image;
-      KC.assets[to].drawing = KC.assets[from].drawing;
+      var copy = JSON.parse(JSON.stringify(state.sides[from]));
+      copy.enabled = true;
+
+      /* Fresh ids for the copies, and their bitmaps copied across with them —
+         otherwise both sides would share one picture and deleting either would
+         take the other's artwork with it. */
+      (copy.texts || []).forEach(function (t) { t.id = KC.newId('t'); });
+      (copy.arts || []).forEach(function (a, i) {
+        var origin = state.sides[from].arts[i];
+        a.id = KC.newId('a');
+        if (origin) {
+          if (KC.assets.images[origin.id]) KC.assets.images[a.id] = KC.assets.images[origin.id];
+          if (KC.assets.drawings[origin.id]) KC.assets.drawings[a.id] = KC.assets.drawings[origin.id];
+        }
+      });
+      state.sides[to] = copy;
       preview.invalidateBorder();
       refresh();
       paintSide();
@@ -552,7 +615,9 @@
     $$('[data-center]').forEach(function (b) {
       b.addEventListener('click', function () {
         beginEdit(0);
-        var el = state.sides[state.activeSide][b.dataset.center];
+        var f = faceNow();
+        var el = b.dataset.center === 'text' ? f.texts[f.textIdx] : f.arts[f.artIdx];
+        if (!el) return;
         el.x = 0; el.y = 0;
         apply();
       });
@@ -573,9 +638,12 @@
         c.height = Math.max(1, Math.round(img.height * k));
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         c._rev = Date.now();
+        var f = faceNow();
+        var art = f.arts[f.artIdx];
+        if (!art) return;
         beginEdit(0);
-        KC.assets[state.activeSide].image = c;
-        state.sides[state.activeSide].art.source = 'image';
+        KC.assets.images[art.id] = c;
+        art.source = 'image';
         refresh();
         apply();
       };
@@ -597,7 +665,10 @@
     $$('[data-draw]').forEach(function (b) {
       b.addEventListener('click', function () {
         var target = b.dataset.draw;
-        var existing = target === 'shape' ? KC.assets.customShape : KC.assets[state.activeSide].drawing;
+        var f = faceNow();
+        var art = f.arts[f.artIdx];
+        var existing = target === 'shape' ? KC.assets.customShape
+                                         : (art ? KC.assets.drawings[art.id] : null);
         drawpad.open(target, existing, null);
       });
     });
@@ -612,8 +683,9 @@
         state.shape.preset = 'custom';
         preview.invalidateBorder();
       } else {
-        KC.assets[state.activeSide].drawing = out;
-        state.sides[state.activeSide].art.source = 'draw';
+        var fD = faceNow();
+        var artD = fD.arts[fD.artIdx];
+        if (artD) { KC.assets.drawings[artD.id] = out; artD.source = 'draw'; }
       }
       drawpad.close();
       refresh();
@@ -728,8 +800,8 @@
       Object.keys(state).forEach(function (k) { if (!(k in d)) delete state[k]; });
       Object.keys(d).forEach(function (k) { state[k] = d[k]; });
       KC.assets.customShape = null;
-      KC.assets.front = { image: null, drawing: null };
-      KC.assets.back = { image: null, drawing: null };
+      KC.assets.images = {};
+      KC.assets.drawings = {};
       clearSession();
       afterLoad();
     });
@@ -749,44 +821,28 @@
     var payload = { version: 2, state: state, assets: {} };
     var put = function (k, cv) { if (cv) payload.assets[k] = cv.toDataURL('image/png'); };
     put('customShape', KC.assets.customShape);
-    put('front.image', KC.assets.front.image);
-    put('front.drawing', KC.assets.front.drawing);
-    put('back.image', KC.assets.back.image);
-    put('back.drawing', KC.assets.back.drawing);
+    Object.keys(KC.assets.images).forEach(function (k) { put('img:' + k, KC.assets.images[k]); });
+    Object.keys(KC.assets.drawings).forEach(function (k) { put('draw:' + k, KC.assets.drawings[k]); });
     return payload;
   }
 
   function loadPayload(p, done) {
     var ps = p.state || {};
     var assets = p.assets || {};
+    var legacyArt = [];      // [{ id, imageKey, drawKey }] built while migrating
 
-    /* Version 1 kept a single face at the state root; fold it into the front
-       side so older saves keep working. */
+    /* v1 kept a single face at the state root. */
     if (!ps.sides) {
       ps.sides = {
-        front: { enabled: true,
-                 border: ps.border || KC.faceDefaults('front').border,
-                 text: ps.text || KC.faceDefaults('front').text,
-                 art: ps.art || KC.faceDefaults('front').art },
-        back: KC.faceDefaults('back')
+        front: { enabled: true, border: ps.border, text: ps.text, art: ps.art },
+        back: { enabled: false }
       };
       if (assets.image) assets['front.image'] = assets.image;
       if (assets.drawing) assets['front.drawing'] = assets.drawing;
     }
 
-    var d = KC.defaults();
-    (function merge(dst, src) {          // deep merge onto defaults
-      Object.keys(dst).forEach(function (k) {
-        if (src[k] === undefined) return;
-        if (dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k]) &&
-            src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) {
-          merge(dst[k], src[k]);
-        } else { dst[k] = src[k]; }
-      });
-    })(d, ps);
-
     /* Relief used to live on the plate; give both faces the old setting. */
-    if (ps.shape && ps.shape.relief !== undefined && ps.sides) {
+    if (ps.shape) {
       ['front', 'back'].forEach(function (w) {
         if (!ps.sides[w]) return;
         ['relief', 'reliefHeight', 'inlayThrough', 'inlayDepth'].forEach(function (k) {
@@ -797,39 +853,117 @@
       });
     }
 
+    /* Colour used to be four palette slots referenced by index; it is now a
+       property of each element. Resolve the old indices to real colours. */
+    var pal = (ps.colors && ps.colors.palette) || ['#e9edf2', '#16181d', '#e0a63a', '#4b8ef0'];
+    var hex = function (i, fallback) {
+      return (typeof i === 'number' && pal[i]) ? pal[i] : fallback;
+    };
+    if (ps.colors && ps.plateColor === undefined) {
+      ps.plateColor = hex(ps.colors.base, '#e9edf2');
+    }
+
+    /* A face used to hold exactly one text and one picture. */
     ['front', 'back'].forEach(function (w) {
-      d.sides[w].text.font = KC.fontKey(d.sides[w].text.font);
+      var f = ps.sides[w];
+      if (!f) return;
+      if (!f.texts) {
+        f.texts = [];
+        if (f.text) {
+          var t = Object.assign({}, f.text);
+          t.id = KC.newId('t');
+          t.font = KC.fontKey(t.font);
+          if (t.color === undefined) t.color = hex(ps.colors && ps.colors.text, '#16181d');
+          f.texts.push(t);
+        }
+        delete f.text;
+      }
+      if (!f.arts) {
+        f.arts = [];
+        if (f.art) {
+          var a = Object.assign({}, f.art);
+          a.id = KC.newId('a');
+          if (a.color === undefined) a.color = hex(ps.colors && ps.colors.art, '#4b8ef0');
+          f.arts.push(a);
+          legacyArt.push({ id: a.id, imageKey: w + '.image', drawKey: w + '.drawing' });
+        }
+        delete f.art;
+      }
+      f.texts.forEach(function (t) { t.font = KC.fontKey(t.font); });
+      if (f.border && f.border.color === undefined) {
+        f.border.color = hex(ps.colors && ps.colors.border, '#16181d');
+      }
+      if (f.textIdx === undefined) f.textIdx = 0;
+      if (f.artIdx === undefined) f.artIdx = 0;
+    });
+    delete ps.colors;
+
+    /* Merge onto defaults, replacing arrays outright rather than blending. */
+    var d = KC.defaults();
+    (function merge(dst, src) {
+      Object.keys(dst).forEach(function (k) {
+        if (src[k] === undefined) return;
+        if (dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k]) &&
+            src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) {
+          merge(dst[k], src[k]);
+        } else { dst[k] = src[k]; }
+      });
+    })(d, ps);
+    ['front', 'back'].forEach(function (w) {
+      if (ps.sides && ps.sides[w] && ps.sides[w].texts) d.sides[w].texts = ps.sides[w].texts;
+      if (ps.sides && ps.sides[w] && ps.sides[w].arts) d.sides[w].arts = ps.sides[w].arts;
+      d.sides[w].texts.forEach(function (t) { if (!t.id) t.id = KC.newId('t'); });
+      d.sides[w].arts.forEach(function (a) { if (!a.id) a.id = KC.newId('a'); });
+      d.sides[w].textIdx = KC.clamp(d.sides[w].textIdx || 0, 0,
+                                    Math.max(0, d.sides[w].texts.length - 1));
+      d.sides[w].artIdx = KC.clamp(d.sides[w].artIdx || 0, 0,
+                                   Math.max(0, d.sides[w].arts.length - 1));
     });
 
     Object.keys(state).forEach(function (k) { if (!(k in d)) delete state[k]; });
     Object.keys(d).forEach(function (k) { state[k] = d[k]; });
 
     KC.assets.customShape = null;
-    KC.assets.front = { image: null, drawing: null };
-    KC.assets.back = { image: null, drawing: null };
+    KC.assets.images = {};
+    KC.assets.drawings = {};
 
-    var slots = ['customShape', 'front.image', 'front.drawing', 'back.image', 'back.drawing'];
-    var pending = 0;
-    slots.forEach(function (key) {
-      if (!assets[key]) return;
-      pending++;
+    /* Bitmaps: current saves key them by picture id; older ones by face. */
+    var jobs = [];
+    if (assets.customShape) jobs.push({ data: assets.customShape, put: function (c) { KC.assets.customShape = c; } });
+    Object.keys(assets).forEach(function (k) {
+      if (k.indexOf('img:') === 0) {
+        jobs.push({ data: assets[k], put: function (c) { KC.assets.images[k.slice(4)] = c; } });
+      } else if (k.indexOf('draw:') === 0) {
+        jobs.push({ data: assets[k], put: function (c) { KC.assets.drawings[k.slice(5)] = c; } });
+      }
+    });
+    legacyArt.forEach(function (m) {
+      if (assets[m.imageKey]) {
+        jobs.push({ data: assets[m.imageKey], put: function (c) { KC.assets.images[m.id] = c; } });
+      }
+      if (assets[m.drawKey]) {
+        jobs.push({ data: assets[m.drawKey], put: function (c) { KC.assets.drawings[m.id] = c; } });
+      }
+    });
+
+    var pending = jobs.length;
+    if (!pending) { done(); return; }
+    jobs.forEach(function (job) {
       var img = new Image();
       img.onload = function () {
         var c = document.createElement('canvas');
         c.width = img.width; c.height = img.height;
         c.getContext('2d').drawImage(img, 0, 0);
         c._rev = Date.now();
-        if (key === 'customShape') KC.assets.customShape = c;
-        else { var b = key.split('.'); KC.assets[b[0]][b[1]] = c; }
+        job.put(c);
         if (!--pending) done();
       };
       img.onerror = function () { if (!--pending) done(); };
-      img.src = assets[key];
+      img.src = job.data;
     });
-    if (!pending) done();
   }
 
-  /* ── session persistence ────────────────────────────────────────────
+  /* ── session persistence ─  /* ── session persistence ────────────────────────────────────────────
      The design survives a refresh via localStorage. Artwork is stored too, but
      dropped rather than losing the design if the quota is hit. */
   var STORE_KEY = 'keychain-studio.session.v2';
@@ -901,6 +1035,7 @@
     bind();
     bindHistory();
     bindSides();
+    bindLists();
     chrome();
     assets();
     exports_();

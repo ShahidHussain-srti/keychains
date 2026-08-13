@@ -6,16 +6,18 @@ No dependencies, no build step — **double-click `index.html`**.
 
 ## Controls
 
-- **Shape** — 12 presets or draw your own outline; width, height, corner radius, thickness
+- **Shape** — 12 presets or draw your own outline; up to 250 mm, corner radius, thickness
 - **Sides** — front and back decorated independently, each with its own relief style;
   copy one to the other, or switch one off
 - **Relief** — raised, inlay (recessed or cut through), or engraved — per face, so you can
   emboss the front and engrave the back
 - **Border** — 16 styles: lines, dashes, dots, beads, ticks, wave, zigzag, scallop, braid;
   inset to 0 for a flush rim; can trace a different shape than the plate
-- **Text** — 16 fonts, solid or outlined, size/spacing/rotation, multiple lines
-- **Picture** — upload an image or draw one in the built-in pad
-- **Colour** — 4 filaments, assigned freely to plate / border / text / picture
+- **Text** — any number of text boxes per face, each with its own font, size, colour and
+  placement; 47 fonts, solid or outlined, spacing/rotation, multiple lines
+- **Pictures** — any number per face; upload an image or draw one in the built-in pad
+- **Colour** — one per element, so a design needs as many filaments as you give it
+  distinct colours, and no more
 - **Keyring hole** — 5 presets or drag it anywhere
 
 Click text, picture or hole in the Layout view to select; drag or arrow-key to move.

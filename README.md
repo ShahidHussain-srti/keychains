@@ -79,11 +79,12 @@ they follow any outline, even hand-drawn ones), and text needs no font parsing. 
 face reuses all of it, mirrored. The 3D view shows the exact mesh that gets exported.
 
 Files in `src/`: `util` state and depth rules, `earcut` triangulation, `raster` the plate
-and hole masks, `mesh` extrusion, `export` the keychain as a printable object, `gl` 3D view,
-`preview` layout view, and `app` to wire it together.
+and hole masks, `mesh` extrusion, `export` the keychain as a printable object, `preview` layout view, and
+`app` to wire it together.
 
 The parts Keychain Studio shares with Dabba (masks and contours, borders, text and
-pictures, the 3MF writer, share links, undo, number fields and most of the styling) live in
+pictures, the 3MF writer, the 3D viewer, share links, undo, number fields and most of the
+styling) live in
 [Workbench](https://github.com/ShahidHussain-srti/workbench), copied into
 `vendor/workbench/`.
 

@@ -1056,7 +1056,7 @@
       },
       function () { beginEdit(450); });     // drag / arrow-key nudge = one undo step
     try {
-      viewer = new KC.Viewer($('#c3d'));
+      viewer = new WB.Viewer($('#c3d'), { view: { az: -0.62, el: 0.78 } });
     } catch (e) {
       viewer = { failed: true, setModel: function () {}, draw: function () {}, frame: function () {} };
     }

@@ -208,7 +208,7 @@ window.KC = window.KC || {};
       '</Relationships>';
 
     var enc = new TextEncoder();
-    return KC.zip([
+    return WB.zip([
       { name: '[Content_Types].xml', data: enc.encode(contentTypes) },
       { name: '_rels/.rels',         data: enc.encode(rels) },
       { name: '3D/3dmodel.model',    data: enc.encode(xml.join('\n')) },

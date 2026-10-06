@@ -16,7 +16,7 @@ window.KC = window.KC || {};
   KC.gridTransform = gridTransform;
 
   function ctxFor(key, g) {
-    var c = KC.scratch(key, g.cols, g.rows);
+    var c = WB.scratch(key, g.cols, g.rows);
     var ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, g.cols, g.rows);
@@ -28,10 +28,10 @@ window.KC = window.KC || {};
     var sz = KC.plateSize(state);
     var p = state.shape.preset;
 
-    if (KC.isBitmapShape(p)) {
+    if (WB.isBitmapShape(p)) {
       var src = KC.assets.customShape;
-      if (!src) { KC.shapePath(ctx, 'rect', sz.w, sz.h, state.shape.radius, t); return false; }
-      if (src._bbox === undefined) src._bbox = KC.contentBBox(src);
+      if (!src) { WB.shapePath(ctx, 'rect', sz.w, sz.h, state.shape.radius, t); return false; }
+      if (src._bbox === undefined) src._bbox = WB.contentBBox(src);
       var bb = src._bbox || { x: 0, y: 0, w: src.width, h: src.height };
       var k = Math.min(sz.w * t.s / bb.w, sz.h * t.s / bb.h);
       ctx.save();
@@ -41,7 +41,7 @@ window.KC = window.KC || {};
       ctx.restore();
       return true;   // already painted; caller must not fill()
     }
-    KC.shapePath(ctx, p, sz.w, sz.h, state.shape.radius, t);
+    WB.shapePath(ctx, p, sz.w, sz.h, state.shape.radius, t);
     return false;
   };
 
@@ -51,8 +51,8 @@ window.KC = window.KC || {};
     o.ctx.beginPath();
     var painted = KC.drawPlate(o.ctx, state, gridTransform(g));
     if (!painted) o.ctx.fill();
-    var m = KC.mask.fromCanvas(o.canvas);
-    return KC.mask.sealEdges(m, g);
+    var m = WB.mask.fromCanvas(o.canvas);
+    return WB.mask.sealEdges(m, g);
   };
 
   /* ── keyring hole ───────────────────────────────────────────────── */
@@ -97,7 +97,7 @@ window.KC = window.KC || {};
 
   function fitHole(state, ax, ay, r, margin) {
     var g = KC.makeGrid(state, 6);          // coarse is plenty for placement
-    var d = KC.sdf(KC.plateMask(state, g), g);
+    var d = WB.sdf(KC.plateMask(state, g), g);
     var need = r + margin;
 
     function clearance(x, y) {
@@ -125,7 +125,7 @@ window.KC = window.KC || {};
     o.ctx.beginPath();
     o.ctx.arc(g.px(h.x), g.py(h.y), h.r * g.ppmm, 0, Math.PI * 2);
     o.ctx.fill();
-    return KC.mask.fromCanvas(o.canvas);
+    return WB.mask.fromCanvas(o.canvas);
   };
 
   /* ── border ───────────────────────────────────────────────────────
@@ -195,9 +195,9 @@ window.KC = window.KC || {};
   /* Trace the isoline of a signed distance field at `dist` mm inside. */
   function isoline(d, g, dist) {
     var m = new Float32Array(d.length), aa = 1 / g.ppmm;
-    for (var i = 0; i < d.length; i++) m[i] = KC.clamp((d[i] - dist) / aa + 0.5, 0, 1);
-    KC.mask.sealEdges(m, g);
-    return KC.contours(m, g, { eps: 0.3 / g.ppmm, minArea: 0.4 });
+    for (var i = 0; i < d.length; i++) m[i] = WB.clamp((d[i] - dist) / aa + 0.5, 0, 1);
+    WB.mask.sealEdges(m, g);
+    return WB.contours(m, g, { eps: 0.3 / g.ppmm, minArea: 0.4 });
   }
 
   function ringPerimeter(r) {
@@ -340,7 +340,7 @@ window.KC = window.KC || {};
       });
     });
 
-    return KC.mask.sealEdges(KC.mask.fromCanvas(o.canvas), g);
+    return WB.mask.sealEdges(WB.mask.fromCanvas(o.canvas), g);
   }
 
   KC.borderMask = function (state, g, plate) {
@@ -359,13 +359,13 @@ window.KC = window.KC || {};
       var o = ctxFor('bshape', g);
       o.ctx.fillStyle = '#fff';
       o.ctx.beginPath();
-      KC.shapePath(o.ctx, b.shape, w, h, b.radius, gridTransform(g));
+      WB.shapePath(o.ctx, b.shape, w, h, b.radius, gridTransform(g));
       o.ctx.fill();
-      src = KC.mask.sealEdges(KC.mask.fromCanvas(o.canvas), g);
+      src = WB.mask.sealEdges(WB.mask.fromCanvas(o.canvas), g);
       centred = true;     // bands straddle the outline instead of insetting
     }
 
-    var d = KC.sdf(src, g);
+    var d = WB.sdf(src, g);
 
     if (STROKED[b.style]) {
       // centreline sits half a line width inside the nominal inset, plus the
@@ -382,7 +382,7 @@ window.KC = window.KC || {};
       for (var k = 0; k < bands.length; k++) {
         var lo = bands[k][0], hi = bands[k][1];
         if (centred) { lo = Math.max(0, lo - b.inset); hi = hi - b.inset; }
-        var t = KC.band(dv, lo, hi, aa);
+        var t = WB.band(dv, lo, hi, aa);
         if (t > v) v = t;
       }
       out[i] = v;
@@ -406,7 +406,7 @@ window.KC = window.KC || {};
 
     var lines = content.split('\n');
     var font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
-               KC.fontByKey(KC.fontKey(tx.font)).css;
+               WB.fontByKey(WB.fontKey(tx.font)).css;
     var track = tx.tracking * t.s;
     var lh = px * tx.lineHeight;
 
@@ -496,7 +496,7 @@ window.KC = window.KC || {};
     var o = ctxFor('text', g);
     var ok = KC.drawText(o.ctx, tx, gridTransform(g), { fill: '#fff' });
     if (!ok) return null;
-    return KC.mask.sealEdges(KC.mask.fromCanvas(o.canvas), g);
+    return WB.mask.sealEdges(WB.mask.fromCanvas(o.canvas), g);
   };
 
   /* ── picture / drawing ──────────────────────────────────────────── */
@@ -504,7 +504,7 @@ window.KC = window.KC || {};
   KC.artPlacement = function (art, t) {
     var src = KC.artBitmap(art);
     if (!src) return null;
-    if (src._bbox === undefined) src._bbox = KC.contentBBox(src);
+    if (src._bbox === undefined) src._bbox = WB.contentBBox(src);
     var bb = src._bbox;
     if (!bb) return null;
     var k = art.size * t.s / Math.max(bb.w, bb.h);
@@ -564,10 +564,10 @@ window.KC = window.KC || {};
         if (a <= 0.004) { out[j] = 0; continue; }
         var lum = (0.2126 * img[j * 4] + 0.7152 * img[j * 4 + 1] + 0.0722 * img[j * 4 + 2]) / 255;
         var v = dark ? (thr - lum) : (lum - thr);
-        out[j] = a * KC.clamp(v / soft + 0.5, 0, 1);
+        out[j] = a * WB.clamp(v / soft + 0.5, 0, 1);
       }
     }
-    return KC.mask.sealEdges(out, g);
+    return WB.mask.sealEdges(out, g);
   };
 
 })(window.KC);

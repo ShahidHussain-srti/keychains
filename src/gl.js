@@ -148,7 +148,7 @@ window.KC = window.KC || {};
         self.pan[1] += dy * k;
       } else {
         self.az -= dx * 0.008;
-        self.el = KC.clamp(self.el + dy * 0.008, -1.5, 1.5);
+        self.el = WB.clamp(self.el + dy * 0.008, -1.5, 1.5);
       }
       self.draw();
     });
@@ -164,7 +164,7 @@ window.KC = window.KC || {};
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
       self.fitted = false;
-      self.dist = KC.clamp(self.dist * Math.exp(e.deltaY * 0.0012), self.radius * 0.55, self.radius * 14);
+      self.dist = WB.clamp(self.dist * Math.exp(e.deltaY * 0.0012), self.radius * 0.55, self.radius * 14);
       self.draw();
     }, { passive: false });
     canvas.addEventListener('dblclick', function () { self.frame(); self.draw(); });
@@ -197,7 +197,7 @@ window.KC = window.KC || {};
     var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
     parts.forEach(function (part) {
-      var rgb = KC.hexToRgb(part.color);
+      var rgb = WB.hexToRgb(part.color);
       var p = part.positions, ix = part.indices;
       for (var i = 0; i < ix.length; i += 3) {
         var a = ix[i] * 3, b = ix[i + 1] * 3, c = ix[i + 2] * 3;

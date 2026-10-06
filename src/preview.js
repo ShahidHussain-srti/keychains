@@ -76,7 +76,7 @@ window.KC = window.KC || {};
     // negative scale and every arcTo/ellipse downstream throws.
     var pad = Math.min(56, W * 0.12, H * 0.12);
     var s = Math.min((W - pad * 2) / Math.max(sz.w, 1), (H - pad * 2) / Math.max(sz.h, 1));
-    s = KC.clamp(s, 0.2, 18);   // never negative; never blown up past legibility
+    s = WB.clamp(s, 0.2, 18);   // never negative; never blown up past legibility
     return { s: s, ox: W / 2, oy: H / 2 };
   };
 
@@ -113,7 +113,7 @@ window.KC = window.KC || {};
     this._grid(ctx, W, H, t);
 
     var layer = function (key) {
-      var c = KC.scratch(key, px, py);
+      var c = WB.scratch(key, px, py);
       var g2 = c.getContext('2d');
       g2.setTransform(dpr, 0, 0, dpr, 0, 0);
       g2.clearRect(0, 0, W, H);
@@ -288,7 +288,7 @@ window.KC = window.KC || {};
 
     if (!this._ringCache || this._ringCache.key !== key) {
       // Roughly matches the on-screen scale, so the ring isn't upscaled and soft.
-      var ppmm = KC.clamp(900 / Math.max(sz.w, sz.h), 8, 18);
+      var ppmm = WB.clamp(900 / Math.max(sz.w, sz.h), 8, 18);
       var g = KC.makeGrid(state, ppmm);
       var plate = KC.plateMask(state, g);
       var ring = KC.borderMask(fs, g, plate);
@@ -297,7 +297,7 @@ window.KC = window.KC || {};
       if (ring) {
         var ictx = cv.getContext('2d');
         var img = ictx.createImageData(g.cols, g.rows);
-        var rgb = KC.hexToRgb(fs.border.color);
+        var rgb = WB.hexToRgb(fs.border.color);
         var r = rgb[0] * 255, gg = rgb[1] * 255, b = rgb[2] * 255;
         for (var i = 0; i < ring.length; i++) {
           img.data[i * 4] = r; img.data[i * 4 + 1] = gg; img.data[i * 4 + 2] = b;
@@ -549,7 +549,7 @@ window.KC = window.KC || {};
         var b = self.boxes(self.transform()).filter(function (q) { return q.key === r.key; })[0];
         if (!b) return;
         var d = Math.max(4, Math.hypot(p.x - b.cx, p.y - b.cy));
-        var v = KC.clamp(r.start * (d / r.dist), r.spec.min, r.spec.max);
+        var v = WB.clamp(r.start * (d / r.dist), r.spec.min, r.spec.max);
         self.el(r.key)[r.field] = Math.round(v * 4) / 4;      // 0.25 mm steps
         canvas.style.cursor = 'nwse-resize';
         self.draw();

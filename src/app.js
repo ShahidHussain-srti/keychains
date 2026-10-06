@@ -31,7 +31,7 @@
     });
 
     var fs = $('#font-select'), groups = {};
-    KC.FONTS.forEach(function (f) {
+    WB.FONTS.forEach(function (f) {
       var g = groups[f.group];
       if (!g) {
         g = groups[f.group] = document.createElement('optgroup');
@@ -366,21 +366,21 @@
       nf.appendChild(num);
 
       num.addEventListener('input', function () {
-        if (KC.get(state, P(path)) === undefined) return;
+        if (WB.get(state, P(path)) === undefined) return;
         var v = parseFloat(num.value);
         if (!isFinite(v)) return;                        // half-typed
         var lo = parseFloat(num.min), hi = parseFloat(num.max);
         if (v < lo) return;                              // may still be typing ("1" on the way to "12")
         if (v > hi) v = hi;
         beginEdit(450);
-        KC.set(state, P(path), v / k);
+        WB.set(state, P(path), v / k);
         onEdit(path);
       });
       num.addEventListener('change', function () {
         var v = parseFloat(num.value), lo = parseFloat(num.min), hi = parseFloat(num.max);
-        if (isFinite(v) && KC.get(state, P(path)) !== undefined) {
-          v = KC.clamp(v, lo, hi);
-          if (Math.abs(v / k - KC.get(state, P(path))) > 1e-9) { beginEdit(0); KC.set(state, P(path), v / k); onEdit(path); }
+        if (isFinite(v) && WB.get(state, P(path)) !== undefined) {
+          v = WB.clamp(v, lo, hi);
+          if (Math.abs(v / k - WB.get(state, P(path))) > 1e-9) { beginEdit(0); WB.set(state, P(path), v / k); onEdit(path); }
         }
         syncNumbers(true);
       });
@@ -390,7 +390,7 @@
 
   function syncNumbers(force) {
     $$('input[data-numfor]').forEach(function (num) {
-      var k = +num.dataset.scale, v = KC.get(state, P(num.dataset.numfor));
+      var k = +num.dataset.scale, v = WB.get(state, P(num.dataset.numfor));
       if (v === undefined) { num.value = ''; return; }
       if (!force && document.activeElement === num) return;   // don't fight typing
       var dp = Math.min(4, (String(+(+num.step).toFixed(6)).split('.')[1] || '').length);
@@ -399,7 +399,7 @@
   }
 
   function coerce(path, raw) {
-    var cur = KC.get(state, P(path));
+    var cur = WB.get(state, P(path));
     if (typeof cur === 'number') return parseFloat(raw);
     if (typeof cur === 'boolean') return !!raw;
     return raw;
@@ -413,7 +413,7 @@
         $$('button', el).forEach(function (b) {
           b.addEventListener('click', function () {
             beginEdit(0);
-            KC.set(state, P(path), coerce(path, b.value));
+            WB.set(state, P(path), coerce(path, b.value));
             syncSeg(el, path);
             onEdit(path);
           });
@@ -424,13 +424,13 @@
       var ev = (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'color')
         ? 'change' : 'input';
       el.addEventListener(ev, function () {
-        if (KC.get(state, P(path)) === undefined) return;   // no such element selected
+        if (WB.get(state, P(path)) === undefined) return;   // no such element selected
         // Sliders and typing coalesce into one undo step; discrete pickers don't.
         var continuous = el.type === 'range' || el.tagName === 'TEXTAREA' ||
                          el.type === 'text' || el.type === 'color';
         beginEdit(continuous ? 450 : 0);
         var v = el.type === 'checkbox' ? el.checked : el.value;
-        KC.set(state, P(path), coerce(path, v));
+        WB.set(state, P(path), coerce(path, v));
         onEdit(path);
       });
       // Range inputs also need the live drag, which 'input' already gives us.
@@ -438,7 +438,7 @@
   }
 
   function syncSeg(el, path) {
-    var v = String(KC.get(state, P(path)));
+    var v = String(WB.get(state, P(path)));
     $$('button', el).forEach(function (b) { b.classList.toggle('on', b.value === v); });
   }
 
@@ -447,7 +447,7 @@
     updateRanges();
     $$('[data-bind]').forEach(function (el) {
       var path = el.dataset.bind;
-      var v = KC.get(state, P(path));
+      var v = WB.get(state, P(path));
       if (el.classList.contains('seg')) { syncSeg(el, path); return; }
       if (v === undefined) return;
       if (el.type === 'checkbox') el.checked = !!v;
@@ -467,7 +467,7 @@
   function labels() {
     syncNumbers();
     $$('[data-val]').forEach(function (el) {
-      var v = KC.get(state, P(el.dataset.val));
+      var v = WB.get(state, P(el.dataset.val));
       if (v === undefined) { el.textContent = ''; return; }
       var f = FMT[el.dataset.fmt || 'mm'] || FMT.mm;
       el.textContent = typeof v === 'number' ? f(v) : String(v);
@@ -493,11 +493,11 @@
        well as the detail depths — so nothing ever asks the slicer for a partial
        layer. The slider's own min is layer-aligned, so with step = layer height
        every reachable value is a multiple. */
-    var lay = function (v) { return KC.tidyDepth(Math.round(v / lh) * lh); };
-    var minT = Math.max(minD, KC.tidyDepth(Math.ceil(0.6 / lh - 1e-6) * lh));
-    var maxT = KC.tidyDepth(minT + Math.floor((5 - minT) / lh + 1e-6) * lh);
+    var lay = function (v) { return WB.tidy(Math.round(v / lh) * lh); };
+    var minT = Math.max(minD, WB.tidy(Math.ceil(0.6 / lh - 1e-6) * lh));
+    var maxT = WB.tidy(minT + Math.floor((5 - minT) / lh + 1e-6) * lh);
 
-    var snappedT = KC.clamp(lay(state.shape.thickness), minT, maxT);
+    var snappedT = WB.clamp(lay(state.shape.thickness), minT, maxT);
     if (Math.abs(snappedT - state.shape.thickness) > 1e-9) state.shape.thickness = snappedT;
     T = state.shape.thickness;
 
@@ -512,7 +512,7 @@
     var face = state.sides[state.activeSide];
 
     var maxInlay = Math.max(minD, T);
-    face.inlayDepth = KC.clamp(lay(face.inlayDepth), Math.min(minD, maxInlay), maxInlay);
+    face.inlayDepth = WB.clamp(lay(face.inlayDepth), Math.min(minD, maxInlay), maxInlay);
     var d = $('#f-inlayDepth');
     if (d) {
       d.min = Math.min(minD, maxInlay).toFixed(2);
@@ -522,7 +522,7 @@
     }
 
     var maxRelief = face.relief === 'engraved' ? Math.max(minD, T - minD) : 3;
-    face.reliefHeight = KC.clamp(lay(face.reliefHeight), minD, Math.max(minD, maxRelief));
+    face.reliefHeight = WB.clamp(lay(face.reliefHeight), minD, Math.max(minD, maxRelief));
     var rh = $('#f-reliefHeight');
     if (rh) {
       rh.min = minD.toFixed(2);
@@ -559,7 +559,7 @@
   function match(rule) {
     var i = rule.indexOf(':');
     var path = rule.slice(0, i), vals = rule.slice(i + 1).split('|');
-    var cur = String(KC.get(state, P(path)));
+    var cur = String(WB.get(state, P(path)));
     return vals.indexOf(cur) >= 0;
   }
 
@@ -571,7 +571,7 @@
     return Math.max(5, ppmm * Math.sqrt(maxCells / cells));
   }
 
-  var rebuild = KC.debounce(function () {
+  var rebuild = WB.debounce(function () {
     var ppmm = capPpmm(Math.min(state.quality, 18), 3.2e6);
     var t0 = performance.now();
     var model;
@@ -726,10 +726,10 @@
       /* Fresh ids for the copies, and their bitmaps copied across with them —
          otherwise both sides would share one picture and deleting either would
          take the other's artwork with it. */
-      (copy.texts || []).forEach(function (t) { t.id = KC.newId('t'); });
+      (copy.texts || []).forEach(function (t) { t.id = WB.newId('t'); });
       (copy.arts || []).forEach(function (a, i) {
         var origin = state.sides[from].arts[i];
-        a.id = KC.newId('a');
+        a.id = WB.newId('a');
         if (origin) {
           if (KC.assets.images[origin.id]) KC.assets.images[a.id] = KC.assets.images[origin.id];
           if (KC.assets.drawings[origin.id]) KC.assets.drawings[a.id] = KC.assets.drawings[origin.id];
@@ -818,7 +818,7 @@
       if (e.target.files && e.target.files[0]) loadImageFile(e.target.files[0]);
     });
 
-    drawpad = new KC.DrawPad($('#drawmodal'));
+    drawpad = new WB.DrawPad($('#drawmodal'));
 
     $$('[data-draw]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -827,7 +827,13 @@
         var art = f.arts[f.artIdx];
         var existing = target === 'shape' ? KC.assets.customShape
                                          : (art ? KC.assets.drawings[art.id] : null);
-        drawpad.open(target, existing, null);
+        drawpad.open(target, existing, null, target === 'shape' ? {
+          title: 'Draw the keychain outline', fill: true,
+          hint: 'Sketch a closed loop. On apply it is filled in and scaled to your width and height.'
+        } : {
+          title: 'Draw a picture',
+          hint: 'Anything you draw is embossed onto the plate. Enclosed areas can be filled or left open.'
+        });
       });
     });
 
@@ -987,10 +993,10 @@
     var pics = pictureCount(), btn = $('#btn-share');
     var payload = { version: 2, state: JSON.parse(JSON.stringify(state)), assets: {} };
     if (pics) payload.picturesLeftOut = pics;
-    KC.shareEncode(payload).then(function (hash) {
-      var url = KC.shareBase() + hash;
-      return KC.copyText(url).then(function (ok) {
-        if (ok) KC.flashButton(btn, 'Copied ✓');
+    WB.shareEncode(payload).then(function (hash) {
+      var url = WB.shareBase() + hash;
+      return WB.copyText(url).then(function (ok) {
+        if (ok) WB.flashButton(btn, 'Copied ✓');
         var body = [];
         body.push(ok ? 'Anyone with this link can open the design and carry on editing their own copy.'
                      : 'Your browser blocked the clipboard here; copy the link above.');
@@ -999,10 +1005,10 @@
           body.push({ warn: true, text: 'Not included: ' + plural(pics, 'a picture or drawn outline', 'pictures or drawn outlines') +
                      '. Links cannot carry those — to share the design complete, send the file from Save (.keychain.json) or the exported 3MF.' });
         }
-        KC.sharePopup({ anchor: btn, title: ok ? 'Link copied' : 'Share this link', link: url, linkCopied: ok, body: body });
+        WB.sharePopup({ anchor: btn, title: ok ? 'Link copied' : 'Share this link', link: url, linkCopied: ok, body: body });
       });
     }).catch(function (err) {
-      KC.sharePopup({ anchor: btn, kind: 'warn', title: 'Could not make a link', body: [err.message] });
+      WB.sharePopup({ anchor: btn, kind: 'warn', title: 'Could not make a link', body: [err.message] });
     });
   }
 
@@ -1010,19 +1016,19 @@
      done() runs once the design is in place. */
   function openSharedLink(done) {
     if (location.hash.indexOf('#d=') !== 0) return false;
-    KC.shareDecode(location.hash).then(function (p) {
-      history.replaceState(null, '', KC.shareBase());   // later refreshes use the session
+    WB.shareDecode(location.hash).then(function (p) {
+      history.replaceState(null, '', WB.shareBase());   // later refreshes use the session
       loadPayload(p, function () {
         done();
         var n = p.picturesLeftOut;
-        KC.sharePopup({ title: 'Opened a shared design', kind: n ? 'warn' : 'ok', body: n
+        WB.sharePopup({ title: 'Opened a shared design', kind: n ? 'warn' : 'ok', body: n
           ? [{ warn: true, text: 'It had ' + plural(n, 'a picture or drawn outline', 'pictures or drawn outlines') +
                ' that links cannot carry. Ask the sender for the design file to get ' + (n === 1 ? 'it' : 'them') + '.' }]
           : ['Changes you make stay in your own copy.'] });
       });
     }).catch(function () {
-      history.replaceState(null, '', KC.shareBase());
-      KC.sharePopup({ kind: 'warn', title: 'That link could not be opened',
+      history.replaceState(null, '', WB.shareBase());
+      WB.sharePopup({ kind: 'warn', title: 'That link could not be opened',
         body: ['It looks damaged or cut short. Ask for it again, or for the design file.'] });
       if (!restoreSession(done)) done();
     });
@@ -1084,8 +1090,8 @@
         f.texts = [];
         if (f.text) {
           var t = Object.assign({}, f.text);
-          t.id = KC.newId('t');
-          t.font = KC.fontKey(t.font);
+          t.id = WB.newId('t');
+          t.font = WB.fontKey(t.font);
           if (t.color === undefined) t.color = hex(ps.colors && ps.colors.text, '#16181d');
           f.texts.push(t);
         }
@@ -1095,14 +1101,14 @@
         f.arts = [];
         if (f.art) {
           var a = Object.assign({}, f.art);
-          a.id = KC.newId('a');
+          a.id = WB.newId('a');
           if (a.color === undefined) a.color = hex(ps.colors && ps.colors.art, '#4b8ef0');
           f.arts.push(a);
           legacyArt.push({ id: a.id, imageKey: w + '.image', drawKey: w + '.drawing' });
         }
         delete f.art;
       }
-      f.texts.forEach(function (t) { t.font = KC.fontKey(t.font); });
+      f.texts.forEach(function (t) { t.font = WB.fontKey(t.font); });
       if (f.border && f.border.color === undefined) {
         f.border.color = hex(ps.colors && ps.colors.border, '#16181d');
       }
@@ -1125,11 +1131,11 @@
     ['front', 'back'].forEach(function (w) {
       if (ps.sides && ps.sides[w] && ps.sides[w].texts) d.sides[w].texts = ps.sides[w].texts;
       if (ps.sides && ps.sides[w] && ps.sides[w].arts) d.sides[w].arts = ps.sides[w].arts;
-      d.sides[w].texts.forEach(function (t) { if (!t.id) t.id = KC.newId('t'); });
-      d.sides[w].arts.forEach(function (a) { if (!a.id) a.id = KC.newId('a'); });
-      d.sides[w].textIdx = KC.clamp(d.sides[w].textIdx || 0, 0,
+      d.sides[w].texts.forEach(function (t) { if (!t.id) t.id = WB.newId('t'); });
+      d.sides[w].arts.forEach(function (a) { if (!a.id) a.id = WB.newId('a'); });
+      d.sides[w].textIdx = WB.clamp(d.sides[w].textIdx || 0, 0,
                                     Math.max(0, d.sides[w].texts.length - 1));
-      d.sides[w].artIdx = KC.clamp(d.sides[w].artIdx || 0, 0,
+      d.sides[w].artIdx = WB.clamp(d.sides[w].artIdx || 0, 0,
                                    Math.max(0, d.sides[w].arts.length - 1));
     });
 
@@ -1188,7 +1194,7 @@
     } catch (e) { return false; }
   })();
 
-  var persist = KC.debounce(function () {
+  var persist = WB.debounce(function () {
     if (!storageOK) return;
     var payload = buildPayload();
     try {

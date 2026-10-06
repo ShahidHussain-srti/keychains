@@ -104,22 +104,22 @@ window.KC = window.KC || {};
       else if (e.kind === 'text') m = KC.textMask(e.item, g);
       else m = KC.artMask(e.item, g);
       if (!m) return;
-      if (mirror) m = KC.mirrorMaskX(m, g);
+      if (mirror) m = WB.mirrorMaskX(m, g);
       out.raw.push({ kind: e.kind, index: e.index, mask: m });
       out.list.push({ kind: e.kind, index: e.index, item: e.item,
-                      color: e.item.color, mask: KC.mask.and(m, plateSolid) });
+                      color: e.item.color, mask: WB.mask.and(m, plateSolid) });
     });
 
     /* Topmost wins: walk down the stack subtracting everything above. */
     var claimed = null;
     for (var i = out.list.length - 1; i >= 0; i--) {
       var full = out.list[i].mask;
-      out.list[i].mask = KC.mask.sub(full, claimed);
-      claimed = KC.mask.union(claimed, full);
+      out.list[i].mask = WB.mask.sub(full, claimed);
+      claimed = WB.mask.union(claimed, full);
     }
-    out.list = out.list.filter(function (e) { return e.mask && !KC.mask.empty(e.mask); });
+    out.list = out.list.filter(function (e) { return e.mask && !WB.mask.empty(e.mask); });
 
-    out.list.forEach(function (e) { out.all = KC.mask.union(out.all, e.mask); });
+    out.list.forEach(function (e) { out.all = WB.mask.union(out.all, e.mask); });
     return out;
   }
 
@@ -131,13 +131,13 @@ window.KC = window.KC || {};
     var warn = [];
 
     var plate = KC.plateMask(state, g);
-    if (KC.mask.empty(plate)) {
+    if (WB.mask.empty(plate)) {
       return { parts: [], stats: { tris: 0, vol: 0 }, grid: g,
                warnings: [{ level: 'bad', msg: 'The keychain outline is empty — pick a preset or draw a custom outline.' }] };
     }
 
     var hole = KC.holeMask(state, g);
-    var plateSolid = KC.mask.sub(plate, hole);
+    var plateSolid = WB.mask.sub(plate, hole);
 
     // Raw element masks, each clipped to the plate.
     var parts = [];
@@ -168,10 +168,10 @@ window.KC = window.KC || {};
     ['front', 'back'].forEach(function (w) {
       var o = w === 'front' ? 'back' : 'front';
       if (!(live[w] && R[w].through && live[o])) return;
-      F[o].list.forEach(function (e) { e.mask = KC.mask.sub(e.mask, F[w].all); });
-      F[o].list = F[o].list.filter(function (e) { return !KC.mask.empty(e.mask); });
+      F[o].list.forEach(function (e) { e.mask = WB.mask.sub(e.mask, F[w].all); });
+      F[o].list = F[o].list.filter(function (e) { return !WB.mask.empty(e.mask); });
       F[o].all = null;
-      F[o].list.forEach(function (e) { F[o].all = KC.mask.union(F[o].all, e.mask); });
+      F[o].list.forEach(function (e) { F[o].all = WB.mask.union(F[o].all, e.mask); });
       if (!F[o].all) live[o] = false;
     });
 
@@ -221,9 +221,9 @@ window.KC = window.KC || {};
       if (hi - lo < 1e-6) continue;
       var mid = (lo + hi) / 2, m = plateSolid;
       remove.forEach(function (r) {
-        if (mid > r.lo + 1e-9 && mid < r.hi - 1e-9) m = KC.mask.sub(m, r.mask);
+        if (mid > r.lo + 1e-9 && mid < r.hi - 1e-9) m = WB.mask.sub(m, r.mask);
       });
-      baseAcc.addPolys(KC.contours(m, g, copts), lo, hi);
+      baseAcc.addPolys(WB.contours(m, g, copts), lo, hi);
     }
     if (baseAcc.idx.length) parts.push(baseAcc.finish());
 
@@ -237,7 +237,7 @@ window.KC = window.KC || {};
         var label = NAME[e.kind] + n + (live.front && live.back ? ' (' + w + ')' : '');
         var key = e.kind + (e.kind === 'border' ? '' : (e.index + 1)) + '-' + w;
         var acc = new Acc(key, label, e.color, e.color);
-        acc.addPolys(KC.contours(e.mask, g, copts), z[0], z[1]);
+        acc.addPolys(WB.contours(e.mask, g, copts), z[0], z[1]);
         if (acc.idx.length) parts.push(acc.finish());
       });
     });
@@ -260,9 +260,9 @@ window.KC = window.KC || {};
       warn.push({ level: 'warn', msg: 'No keyring hole — add one, or plan to glue on a bail.' });
     } else {
       var hc = KC.holeCentre(state);
-      var wall = KC.mask.and(plate, discMask(state, g, hc, hc.r + 1.2));
+      var wall = WB.mask.and(plate, discMask(state, g, hc, hc.r + 1.2));
       var ideal = Math.PI * Math.pow(hc.r + 1.2, 2);
-      if (KC.mask.area(wall, g) < ideal * 0.93) {
+      if (WB.mask.area(wall, g) < ideal * 0.93) {
         warn.push({ level: 'bad', msg: 'The keyring hole breaks the edge of the plate. Reduce its diameter or increase the edge margin.' });
       }
     }
@@ -275,7 +275,7 @@ window.KC = window.KC || {};
       if (!live[which]) return;
       var m = F[which], tag = (live.front && live.back) ? ' on the ' + which : '';
 
-      var thin = KC.maxInscribed(m.all, g) * 2;
+      var thin = WB.maxInscribed(m.all, g) * 2;
       if (thin > 0 && thin < 0.8) {
         warn.push({ level: 'warn', msg: 'Thinnest detail' + tag + ' is about ' + thin.toFixed(2) +
           ' mm wide — under two 0.4 mm extrusion widths, so it may print poorly. Try a bolder font or a thicker border.' });
@@ -290,12 +290,12 @@ window.KC = window.KC || {};
         var live2 = placed[r.kind + (r.index || 0)];
         var what = r.kind === 'text' ? 'Text' : r.kind === 'art' ? 'Picture' : 'The border';
         var n = r.kind === 'border' ? '' : ' ' + ((r.index || 0) + 1);
-        if (!live2 || KC.mask.empty(live2)) {
+        if (!live2 || WB.mask.empty(live2)) {
           if (r.kind !== 'border') {
             warn.push({ level: 'bad', msg: what + n + tag +
               ' sits entirely off the plate, or is hidden behind something on top of it.' });
           }
-        } else if (KC.mask.area(live2, g) < KC.mask.area(r.mask, g) * 0.97) {
+        } else if (WB.mask.area(live2, g) < WB.mask.area(r.mask, g) * 0.97) {
           warn.push({ level: 'warn', msg: what + n + tag +
             ' is partly clipped by the plate edge, the keyring hole, or an element above it.' });
         }
@@ -380,14 +380,14 @@ window.KC = window.KC || {};
   };
 
   function discMask(state, g, c, r) {
-    var cv = KC.scratch('disc', g.cols, g.rows);
+    var cv = WB.scratch('disc', g.cols, g.rows);
     var ctx = cv.getContext('2d', { willReadFrequently: true });
     ctx.clearRect(0, 0, g.cols, g.rows);
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(g.px(c.x), g.py(c.y), r * g.ppmm, 0, Math.PI * 2);
     ctx.fill();
-    return KC.mask.fromCanvas(cv);
+    return WB.mask.fromCanvas(cv);
   }
 
   function countColors(parts) {

@@ -7,7 +7,8 @@ add text, a border or a picture, choose colours, and export a multi-colour `.3mf
 slicers open with the colours already assigned.
 
 There's nothing to install and no build step. Use the link above, or download the repo
-and double-click `index.html`.
+and double-click `index.html`. It works offline too: the geometry engine
+([Manifold](https://github.com/elalish/manifold)) is bundled in `vendor/workbench/`.
 
 ## What you can do
 
@@ -72,19 +73,21 @@ A few things worth knowing:
 
 ## How it works
 
-Every element is drawn to an anti-aliased mask in millimetre space, then traced with
-marching squares, simplified, triangulated and extruded. Working from masks makes a lot of
-things easy: colour separation is a 2D subtraction, borders are a distance threshold (so
-they follow any outline, even hand-drawn ones), and text needs no font parsing. The back
-face reuses all of it, mirrored. The 3D view shows the exact mesh that gets exported.
+Every element is drawn to an anti-aliased mask in millimetre space, traced with marching
+squares, and extruded with [Manifold](https://github.com/elalish/manifold), whose booleans
+always come back watertight. Working from masks makes a lot of things easy: colour
+separation is a 2D subtraction, borders are a distance threshold (so they follow any
+outline, even hand-drawn ones), and text needs no font parsing. Recesses are cut with the
+very bodies that fill them, so inlays fit exactly. The back face reuses all of it,
+mirrored. The 3D view shows the exact mesh that gets exported.
 
-Files in `src/`: `util` state and depth rules, `earcut` triangulation, `raster` the plate
-and hole masks, `mesh` extrusion, `export` the keychain as a printable object, `preview` layout view, and
+Files in `src/`: `util` state and depth rules, `raster` the plate and hole masks, `mesh`
+the solids, `export` the keychain as a printable object, `preview` the layout view, and
 `app` to wire it together.
 
 The parts Keychain Studio shares with Dabba (masks and contours, borders, text and
-pictures, the 3MF writer, the 3D viewer, share links, undo, number fields and most of the
-styling) live in
+pictures, the 3MF writer, the 3D viewer, the geometry engine, share links, undo, number
+fields and most of the styling) live in
 [Workbench](https://github.com/ShahidHussain-srti/workbench), copied into
 `vendor/workbench/`.
 
@@ -100,8 +103,9 @@ You can use it, change it and share it. If you distribute something built from i
 including hosting a modified copy on a website, that has to be GPL with its source
 available too. There's no warranty. See [LICENSE](LICENSE) for the full text.
 
-`src/earcut.js` is ported from [earcut](https://github.com/mapbox/earcut), © 2016 Mapbox,
-under the ISC License ([src/LICENSE-earcut.txt](src/LICENSE-earcut.txt)), which is
+`vendor/workbench/manifold.js` is [Manifold](https://github.com/elalish/manifold), © The
+Manifold Authors, under the Apache License 2.0
+([vendor/workbench/LICENSE-manifold.txt](vendor/workbench/LICENSE-manifold.txt)), which is
 compatible with the GPL.
 
 `vendor/workbench/` is [Workbench](https://github.com/ShahidHussain-srti/workbench), by the

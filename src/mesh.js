@@ -1,79 +1,21 @@
 /* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
  * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
-/* mesh.js — masks → colour-separated, watertight extrusions.
+/* mesh.js — masks → colour-separated, watertight solids.
  *
- * Colour regions are made mutually exclusive in 2-D before anything is
- * extruded (text wins over picture wins over border), so no two filaments ever
- * claim the same voxel and the slicer never sees overlapping solids.
+ * Every element is traced from its mask and extruded with Manifold, whose
+ * booleans always return closed, consistently oriented meshes. Colour regions
+ * are made mutually exclusive (text wins over picture wins over border), first
+ * in 2-D and then exactly as solids, so no two filaments ever claim the same
+ * space. A recess is cut with the very bodies that fill it, so inlays fit with
+ * no gap or overlap.
  */
 window.KC = window.KC || {};
 (function (KC) {
   'use strict';
 
-  /* Accumulates triangles for one colour. */
-  function Acc(key, label, colorIndex, color) {
-    this.key = key; this.label = label;
-    this.colorIndex = (colorIndex || color || '#000000').toUpperCase();
-    this.color = color;
-    this.pos = []; this.idx = [];
-  }
-
-  Acc.prototype.addPolys = function (polys, z0, z1) {
-    for (var p = 0; p < polys.length; p++) extrude(this, polys[p], z0, z1);
-  };
-
-  Acc.prototype.finish = function () {
-    return {
-      key: this.key, label: this.label,
-      colorIndex: this.colorIndex, color: this.color,
-      positions: new Float32Array(this.pos),
-      indices: new Uint32Array(this.idx)
-    };
-  };
-
-  /* One polygon (CCW outer + CW holes) → prism between z0 and z1. */
-  function extrude(acc, poly, z0, z1) {
-    var rings = [poly.outer].concat(poly.holes);
-    var flat = [], holeIdx = [], count = 0, i, j;
-
-    for (i = 0; i < rings.length; i++) {
-      if (i > 0) holeIdx.push(count);
-      var r = rings[i];
-      for (j = 0; j < r.length; j++) { flat.push(r[j].x, r[j].y); count++; }
-    }
-
-    var tris = KC.earcut(flat, holeIdx, 2);
-    if (!tris.length) return;
-
-    var base = acc.pos.length / 3;
-    var nPts = count;
-
-    // Two vertex layers: [0 .. n) bottom at z0, [n .. 2n) top at z1.
-    for (i = 0; i < nPts; i++) acc.pos.push(flat[i * 2], flat[i * 2 + 1], z0);
-    for (i = 0; i < nPts; i++) acc.pos.push(flat[i * 2], flat[i * 2 + 1], z1);
-
-    // Caps: top keeps earcut's winding (CCW → +Z), bottom is reversed.
-    for (i = 0; i < tris.length; i += 3) {
-      var a = tris[i], b = tris[i + 1], c = tris[i + 2];
-      acc.idx.push(base + nPts + a, base + nPts + b, base + nPts + c);
-      acc.idx.push(base + c, base + b, base + a);
-    }
-
-    // Walls. For a CCW outer ring the outward normal is to the right of travel,
-    // which the same winding also gives for CW hole rings — pointing into the
-    // hole, i.e. out of the material.
-    var off = 0;
-    for (i = 0; i < rings.length; i++) {
-      var ring = rings[i], n = ring.length;
-      for (j = 0; j < n; j++) {
-        var v0 = base + off + j, v1 = base + off + (j + 1) % n;
-        var u0 = v0 + nPts, u1 = v1 + nPts;
-        acc.idx.push(v0, v1, u1);
-        acc.idx.push(v0, u1, u0);
-      }
-      off += n;
-    }
-  }
+  var WASM = null;
+  KC.setManifold = function (w) { WASM = w; };
+  KC.engineReady = function () { return !!WASM; };
 
   function volumeOf(part) {
     var p = part.positions, ix = part.indices, v = 0;
@@ -208,39 +150,91 @@ window.KC = window.KC || {};
       }
     });
 
-    /* ── base plate, as bands between every z where something changes ── */
-    var baseAcc = new Acc('base', 'Keychain', state.plateColor, state.plateColor);
-    var cuts = [0, T];
-    remove.forEach(function (r) { cuts.push(r.lo, r.hi); });
-    cuts = cuts.filter(function (z) { return z >= -1e-9 && z <= T + 1e-9; })
-               .sort(function (a, b) { return a - b; })
-               .filter(function (z, i, a) { return i === 0 || z - a[i - 1] > 1e-6; });
-
-    for (var bi = 0; bi < cuts.length - 1; bi++) {
-      var lo = cuts[bi], hi = cuts[bi + 1];
-      if (hi - lo < 1e-6) continue;
-      var mid = (lo + hi) / 2, m = plateSolid;
-      remove.forEach(function (r) {
-        if (mid > r.lo + 1e-9 && mid < r.hi - 1e-9) m = WB.mask.sub(m, r.mask);
+    /* ── solids ─────────────────────────────────────────────────────
+       Every Manifold object made here goes on `made` and is freed at the end. */
+    var made = [];
+    var keep = function (o) { made.push(o); return o; };
+    var prism = function (mask, z0, z1) {
+      if (!mask || z1 - z0 < 1e-6) return null;
+      var rings = [];
+      WB.contours(mask, g, copts).forEach(function (poly) {
+        rings.push(poly.outer.map(function (q) { return [q.x, q.y]; }));
+        poly.holes.forEach(function (h) { rings.push(h.map(function (q) { return [q.x, q.y]; })); });
       });
-      baseAcc.addPolys(WB.contours(m, g, copts), lo, hi);
+      if (!rings.length) return null;
+      var cs = keep(new WASM.CrossSection(rings, 'EvenOdd'));
+      if (cs.isEmpty()) return null;
+      var m = keep(keep(cs.extrude(z1 - z0)).translate([0, 0, z0]));
+      return m.isEmpty() ? null : m;
+    };
+    var unite = function (list) {
+      list = list.filter(Boolean);
+      if (!list.length) return null;
+      return list.length === 1 ? list[0] : keep(WASM.Manifold.union(list));
+    };
+    var toPart = function (solid, key, label, color) {
+      var mesh = WB.meshOf(solid);
+      return { key: key, label: label, color: color,
+               colorIndex: (color || '#000000').toUpperCase(),
+               positions: mesh.positions, indices: mesh.indices };
+    };
+
+    try {
+      /* Coloured detail bodies, one per element, topmost first claiming its
+         space exactly (the masks already agree; this settles the last hair
+         where two traced outlines meet). */
+      var NAME = { border: 'Border', text: 'Text', art: 'Picture' };
+      var bodies = { front: [], back: [] };
+      ['front', 'back'].forEach(function (w) {
+        if (!live[w] || !span[w]) return;
+        var z = span[w], above = null;
+        var list = F[w].list.map(function (e) { return { e: e, m: prism(e.mask, z[0], z[1]) }; })
+                            .filter(function (b) { return b.m; });
+        for (var i = list.length - 1; i >= 0; i--) {
+          var full = list[i].m;
+          if (above) list[i].m = keep(full.subtract(above));
+          above = above ? keep(above.add(full)) : full;
+        }
+        bodies[w] = list.filter(function (b) { return !b.m.isEmpty(); });
+      });
+      /* Across faces too: where a through cut on the front shares the column
+         with artwork on the back, the front keeps it. */
+      var frontAll = unite(bodies.front.map(function (b) { return b.m; }));
+      if (frontAll && bodies.back.length) {
+        bodies.back = bodies.back.map(function (b) { return { e: b.e, m: keep(b.m.subtract(frontAll)) }; })
+                                 .filter(function (b) { return !b.m.isEmpty(); });
+      }
+
+      /* The plate, less every recess: an inlay or through cut is removed with
+         its own bodies; an engraving, which has none, with its outline. */
+      var plateBody = prism(plateSolid, 0, T);
+      var cutters = [];
+      ['front', 'back'].forEach(function (w) {
+        if (!live[w]) return;
+        var r = R[w];
+        if (r.style === 'raised') return;
+        if (span[w]) cutters.push(unite(bodies[w].map(function (b) { return b.m; })));
+        else {
+          var rm = remove.filter(function (q) { return q.mask === F[w].all; })[0];
+          if (rm) cutters.push(prism(rm.mask, rm.lo, rm.hi));
+        }
+      });
+      var cutAll = unite(cutters);
+      if (plateBody && cutAll) plateBody = keep(plateBody.subtract(cutAll));
+      if (plateBody && !plateBody.isEmpty()) parts.push(toPart(plateBody, 'base', 'Keychain', state.plateColor));
+
+      ['front', 'back'].forEach(function (w) {
+        bodies[w].forEach(function (b) {
+          var e = b.e;
+          var n = e.kind === 'border' ? '' : ' ' + (e.index + 1);
+          var label = NAME[e.kind] + n + (live.front && live.back ? ' (' + w + ')' : '');
+          var key = e.kind + (e.kind === 'border' ? '' : (e.index + 1)) + '-' + w;
+          parts.push(toPart(b.m, key, label, e.color));
+        });
+      });
+    } finally {
+      made.forEach(function (o) { try { o.delete(); } catch (err) { /* already freed */ } });
     }
-    if (baseAcc.idx.length) parts.push(baseAcc.finish());
-
-    /* ── coloured detail bodies, one per element ────────────────────── */
-    var NAME = { border: 'Border', text: 'Text', art: 'Picture' };
-    ['front', 'back'].forEach(function (w) {
-      if (!live[w] || !span[w]) return;
-      var z = span[w];
-      F[w].list.forEach(function (e) {
-        var n = e.kind === 'border' ? '' : ' ' + (e.index + 1);
-        var label = NAME[e.kind] + n + (live.front && live.back ? ' (' + w + ')' : '');
-        var key = e.kind + (e.kind === 'border' ? '' : (e.index + 1)) + '-' + w;
-        var acc = new Acc(key, label, e.color, e.color);
-        acc.addPolys(WB.contours(e.mask, g, copts), z[0], z[1]);
-        if (acc.idx.length) parts.push(acc.finish());
-      });
-    });
 
     /* ── stats ──────────────────────────────────────────────────── */
     var tris = 0, vol = 0;

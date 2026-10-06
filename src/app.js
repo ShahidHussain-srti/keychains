@@ -451,6 +451,7 @@
   }
 
   var rebuild = WB.debounce(function () {
+    if (!KC.engineReady()) return;          // loadEngine() rebuilds once it's up
     var ppmm = capPpmm(Math.min(state.quality, 18), 3.2e6);
     var t0 = performance.now();
     var model;
@@ -724,6 +725,7 @@
 
   function buildForExport() {
     var ppmm = capPpmm(state.quality, 1.4e7);
+    if (!KC.engineReady()) throw new Error('the geometry engine is still loading');
     return KC.buildModel(state, ppmm);
   }
 
@@ -1094,6 +1096,20 @@
 
     paintSide();
     if (!restoring) apply();
+    loadEngine();
+  }
+
+  /* ── geometry engine ────────────────────────────────────────────── */
+  function loadEngine() {
+    busy(true, 'Loading the geometry engine…');
+    WB.loadManifold().then(function (w) {
+      KC.setManifold(w);
+      busy(false);
+      rebuild();
+    }, function (err) {
+      busy(false);
+      showWarnings([{ level: 'bad', msg: err.message }]);
+    });
   }
 
   /* Live handles, for console poking and automated checks. */

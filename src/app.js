@@ -305,6 +305,7 @@
     if (!isFinite(v0)) v0 = 0;
     var step = parseFloat(input.step) || 1;
     var min = input.min !== '' ? parseFloat(input.min) : -Infinity;
+    var max = input.max !== '' ? parseFloat(input.max) : Infinity;
     var moved = false;
     handle.setPointerCapture(e.pointerId);
     document.body.classList.add('scrubbing');
@@ -316,7 +317,7 @@
       var mult = ev.shiftKey ? 10 : ev.altKey ? 0.1 : 1;
       var grain = step * (ev.altKey ? 0.1 : 1);
       var perPx = (step >= 1 ? step / 6 : step) * mult;
-      var v = Math.max(min, Math.round((v0 + dx * perPx) / grain) * grain);
+      var v = Math.min(max, Math.max(min, Math.round((v0 + dx * perPx) / grain) * grain));
       var dp = Math.max(0, (String(grain).split('.')[1] || '').length);
       input.value = v.toFixed(Math.min(dp, 4));
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -343,45 +344,55 @@
   function enhanceNumbers() {
     $$('.row b[data-val]').forEach(function (b) {
       var row = b.closest('.row'), path = b.dataset.val;
-      var rng = $('input[type=range][data-bind="' + path + '"]', row);
-      if (!rng) return;
-      var u = NUM_UNITS[b.dataset.fmt || 'mm'] || NUM_UNITS.mm;
+      var num = $('input[type=range][data-bind="' + path + '"]', row);
+      if (!num) return;
+      var u = NUM_UNITS[b.dataset.fmt || 'mm'] || NUM_UNITS.mm, k = u[1];
       var label = b.parentNode;
       b.remove();
       label.textContent = label.textContent.trim();
+      // The slider becomes the number box: same id, so the code that moves its
+      // limits (updateRanges) keeps working. Limits stay in design units
+      // unless shown scaled (percentages), which are converted once here.
+      num.type = 'number';
+      delete num.dataset.bind;
+      num.dataset.numfor = path; num.dataset.scale = k;
+      if (k !== 1) { num.min = num.min * k; num.max = num.max * k; num.step = num.step * k; }
       var nf = document.createElement('span');
       nf.className = 'nf'; nf.dataset.unit = u[0];
-      var num = document.createElement('input');
-      num.type = 'number'; num.dataset.numfor = path; num.dataset.scale = u[1];
-      num.setAttribute('aria-label', label.textContent);
-      nf.appendChild(num);
       row.classList.add('num');
-      row.insertBefore(nf, rng);
-      num._range = rng;
+      row.insertBefore(nf, num);
+      nf.appendChild(num);
 
       num.addEventListener('input', function () {
         if (KC.get(state, P(path)) === undefined) return;
-        var v = parseFloat(num.value) / u[1];
-        if (!isFinite(v)) return;                       // half-typed
-        v = KC.clamp(v, parseFloat(rng.min), parseFloat(rng.max));
+        var v = parseFloat(num.value);
+        if (!isFinite(v)) return;                        // half-typed
+        var lo = parseFloat(num.min), hi = parseFloat(num.max);
+        if (v < lo) return;                              // may still be typing ("1" on the way to "12")
+        if (v > hi) v = hi;
         beginEdit(450);
-        KC.set(state, P(path), v);
+        KC.set(state, P(path), v / k);
         onEdit(path);
       });
-      num.addEventListener('change', function () { syncNumbers(true); });
+      num.addEventListener('change', function () {
+        var v = parseFloat(num.value), lo = parseFloat(num.min), hi = parseFloat(num.max);
+        if (isFinite(v) && KC.get(state, P(path)) !== undefined) {
+          v = KC.clamp(v, lo, hi);
+          if (Math.abs(v / k - KC.get(state, P(path))) > 1e-9) { beginEdit(0); KC.set(state, P(path), v / k); onEdit(path); }
+        }
+        syncNumbers(true);
+      });
       scrubbable(num, label);
     });
   }
 
   function syncNumbers(force) {
     $$('input[data-numfor]').forEach(function (num) {
-      var rng = num._range, k = +num.dataset.scale, v = KC.get(state, P(num.dataset.numfor));
-      num.min = rng.min * k; num.max = rng.max * k; num.step = rng.step * k;
+      var k = +num.dataset.scale, v = KC.get(state, P(num.dataset.numfor));
       if (v === undefined) { num.value = ''; return; }
-      if (document.activeElement !== rng) rng.value = v;
       if (!force && document.activeElement === num) return;   // don't fight typing
-      var dp = Math.min(4, (String(+(rng.step * k).toFixed(6)).split('.')[1] || '').length);
-      num.value = (v * k).toFixed(dp).replace(/\.?0+$/, '') || '0';
+      var dp = Math.min(4, (String(+(+num.step).toFixed(6)).split('.')[1] || '').length);
+      num.value = (v * k).toFixed(dp).replace(/\.0+$|(\.\d*?)0+$/, '$1') || '0';
     });
   }
 

@@ -143,6 +143,7 @@ window.KC = window.KC || {};
       lastX = e.clientX; lastY = e.clientY;
       if (shift || e.buttons === 4) {
         var k = self.dist * 0.0016;
+        self.fitted = false;
         self.pan[0] -= dx * k;
         self.pan[1] += dy * k;
       } else {
@@ -162,6 +163,7 @@ window.KC = window.KC || {};
     canvas.addEventListener('pointercancel', end);
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
+      self.fitted = false;
       self.dist = KC.clamp(self.dist * Math.exp(e.deltaY * 0.0012), self.radius * 0.55, self.radius * 14);
       self.draw();
     }, { passive: false });
@@ -230,8 +232,18 @@ window.KC = window.KC || {};
     this.radius = Math.max(6, Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2);
   };
 
+  /* Distance that fits the model in a canvas of this shape: the vertical field
+     of view sets it for wide canvases, the horizontal one for tall ones. */
+  KC.Viewer.prototype.fitDistance = function (aspect) {
+    return this.radius * 3.1 / Math.min(1, aspect || 1);
+  };
+
+  /* Until you zoom or pan, the view keeps refitting as the canvas resizes
+     (switching between one and two panes, say). */
   KC.Viewer.prototype.frame = function () {
-    this.dist = this.radius * 3.1;
+    var c = this.canvas;
+    this.fitted = true;
+    this.dist = this.fitDistance(c.clientWidth / Math.max(1, c.clientHeight));
     this.pan = [0, 0];
     this.az = -0.62;
     this.el = 0.78;
@@ -244,6 +256,7 @@ window.KC = window.KC || {};
     var w = Math.max(1, Math.round(canvas.clientWidth * dpr));
     var h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    if (this.fitted) this.dist = this.fitDistance(w / h);
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);

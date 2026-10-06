@@ -369,9 +369,10 @@
   <!-- ─────────────────────────── viewport ─────────────────────────── -->
   <div class="viewport">
     <div class="vptabs">
-      <div class="seg" id="viewtabs" role="group" aria-label="Preview mode">
-        <button value="2d" class="on">Layout</button>
-        <button value="3d">3D preview</button>
+      <div class="seg" id="viewtabs" role="group" aria-label="Views">
+        <button value="2d">Layout</button>
+        <button value="both" class="on">Layout + 3D</button>
+        <button value="3d">3D</button>
       </div>
       <div class="grow"></div>
       <span class="stat" id="stat-dims"></span>
@@ -379,10 +380,19 @@
       <span class="stat" id="stat-mass"></span>
     </div>
 
-    <div class="stage" id="stage">
-      <canvas id="c2d" tabindex="0" aria-label="Keychain layout — click an element to select, drag to move"></canvas>
-      <canvas id="c3d" hidden></canvas>
-      <div class="hud" id="hud3d" hidden>drag to orbit · scroll to zoom · shift-drag to pan</div>
+    <div class="panes" id="panes" data-pane="both">
+      <section class="pane" id="pane-2d">
+        <div class="stage" id="stage">
+          <canvas id="c2d" tabindex="0" aria-label="Keychain layout — click an element to select, drag to move"></canvas>
+          <div class="hud">click to select · drag or arrow keys to move</div>
+        </div>
+      </section>
+      <section class="pane" id="pane-3d">
+        <div class="stage" id="stage3d">
+          <canvas id="c3d"></canvas>
+          <div class="hud" id="hud3d">drag to orbit · scroll to zoom · shift-drag to pan</div>
+        </div>
+      </section>
       <div class="busy" id="busy" hidden><div class="spinner"></div><span id="busy-text">Building…</span></div>
     </div>
 

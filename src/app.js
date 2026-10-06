@@ -7,7 +7,9 @@
   var state = KC.defaults();
   var preview, viewer, drawpad;
   var lastModel = null;
-  var view = '2d';
+  var view = 'both';
+  function show3d() { return view !== '2d'; }
+  function show2d() { return view !== '3d'; }
 
   var $  = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -585,7 +587,7 @@
       var first = !viewer.count;
       viewer.setModel(model.parts);
       if (first) viewer.frame();
-      if (view === '3d') viewer.draw();
+      if (show3d()) viewer.draw();
     }
 
     stats(model, performance.now() - t0);
@@ -759,11 +761,12 @@
       b.addEventListener('click', function () {
         view = b.value;
         $$('#viewtabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
-        $('#c2d').hidden = view !== '2d';
-        $('#c3d').hidden = view !== '3d';
-        $('#hud3d').hidden = view !== '3d';
-        if (view === '3d' && viewer) { viewer.draw(); }
-        else preview.draw();
+        $('#panes').dataset.pane = view;
+        // Panes change size with the view, so draw once layout has settled.
+        requestAnimationFrame(function () {
+          if (show2d()) preview.draw();
+          if (show3d() && viewer && !viewer.failed) viewer.draw();
+        });
       });
     });
 
@@ -1263,6 +1266,7 @@
       if (viewer && !viewer.failed) viewer.draw();
     });
     ro.observe($('#stage'));
+    ro.observe($('#stage3d'));
 
     if (viewer && viewer.failed) {
       showWarnings([{ level: 'warn', msg: 'WebGL is unavailable, so the 3D preview is disabled. Export still works.' }]);

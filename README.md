@@ -28,7 +28,8 @@ and double-click `index.html`.
   colours.
 - **Keyring hole**: pick one of five positions or drag it wherever you want.
 
-Click text, a picture or the hole in the layout view to select it, then drag it or nudge
+The layout and the 3D preview sit side by side, or you can switch to either one on its
+own. Click text, a picture or the hole in the layout to select it, then drag it or nudge
 it with the arrow keys. Every slider has a number box next to it: type an exact value, or
 drag sideways on the label or the edge of the box (Shift for bigger steps, Alt for finer).
 

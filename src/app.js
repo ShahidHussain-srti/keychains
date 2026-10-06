@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* app.js — UI wiring: declarative bindings, live preview, export. */
 (function (KC) {
   'use strict';
@@ -270,6 +272,119 @@
     return path.charAt(0) === '~' ? 'sides.' + side + path.slice(1) : path;
   }
 
+  /* ── drag to change a number ────────────────────────────────────────
+     As in Unity's inspector: the label, and the left and right edges of the
+     box, are drag handles. Drag sideways to change the value — Shift for big
+     steps, Alt for fine ones; click the middle of the box to type. */
+  var SCRUB_EDGE = 10;
+
+  function scrubbable(input, label) {
+    var nearEdge = function (e) {
+      var r = input.getBoundingClientRect(), x = e.clientX - r.left;
+      return x <= SCRUB_EDGE || x >= r.width - SCRUB_EDGE;
+    };
+    input.addEventListener('pointermove', function (e) {
+      if (document.body.classList.contains('scrubbing')) return;
+      input.classList.toggle('edgehot', !input.disabled && nearEdge(e));
+    });
+    input.addEventListener('pointerleave', function () { input.classList.remove('edgehot'); });
+    input.addEventListener('pointerdown', function (e) {
+      if (e.button === 0 && !input.disabled && nearEdge(e)) startScrub(e, input, input);
+    });
+    if (label) {
+      label.classList.add('scrublabel');
+      label.addEventListener('pointerdown', function (e) {
+        if (e.button === 0 && !input.disabled) startScrub(e, input, label);
+      });
+    }
+  }
+
+  function startScrub(e, input, handle) {
+    e.preventDefault();
+    var x0 = e.clientX, v0 = parseFloat(input.value);
+    if (!isFinite(v0)) v0 = 0;
+    var step = parseFloat(input.step) || 1;
+    var min = input.min !== '' ? parseFloat(input.min) : -Infinity;
+    var moved = false;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('scrubbing');
+
+    var move = function (ev) {
+      var dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 3) return;
+      moved = true;
+      var mult = ev.shiftKey ? 10 : ev.altKey ? 0.1 : 1;
+      var grain = step * (ev.altKey ? 0.1 : 1);
+      var perPx = (step >= 1 ? step / 6 : step) * mult;
+      var v = Math.max(min, Math.round((v0 + dx * perPx) / grain) * grain);
+      var dp = Math.max(0, (String(grain).split('.')[1] || '').length);
+      input.value = v.toFixed(Math.min(dp, 4));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    var up = function () {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      document.body.classList.remove('scrubbing');
+      if (moved) input.dispatchEvent(new Event('change', { bubbles: true }));
+      else { input.focus(); input.select(); }
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  }
+
+  /* ── exact numbers beside the sliders ─────────────────────────────
+     Each slider's readout becomes a box you can type into or drag (above).
+     It writes the setting itself, so percentages can be shown as 0–100 while
+     the design stores 0–1; layer snapping still happens in updateRanges(). */
+  var NUM_UNITS = { mm: ['mm', 1], n: ['', 1], deg: ['°', 1], pct: ['%', 100], x: ['×', 1] };
+
+  function enhanceNumbers() {
+    $$('.row b[data-val]').forEach(function (b) {
+      var row = b.closest('.row'), path = b.dataset.val;
+      var rng = $('input[type=range][data-bind="' + path + '"]', row);
+      if (!rng) return;
+      var u = NUM_UNITS[b.dataset.fmt || 'mm'] || NUM_UNITS.mm;
+      var label = b.parentNode;
+      b.remove();
+      label.textContent = label.textContent.trim();
+      var nf = document.createElement('span');
+      nf.className = 'nf'; nf.dataset.unit = u[0];
+      var num = document.createElement('input');
+      num.type = 'number'; num.dataset.numfor = path; num.dataset.scale = u[1];
+      num.setAttribute('aria-label', label.textContent);
+      nf.appendChild(num);
+      row.classList.add('num');
+      row.insertBefore(nf, rng);
+      num._range = rng;
+
+      num.addEventListener('input', function () {
+        if (KC.get(state, P(path)) === undefined) return;
+        var v = parseFloat(num.value) / u[1];
+        if (!isFinite(v)) return;                       // half-typed
+        v = KC.clamp(v, parseFloat(rng.min), parseFloat(rng.max));
+        beginEdit(450);
+        KC.set(state, P(path), v);
+        onEdit(path);
+      });
+      num.addEventListener('change', function () { syncNumbers(true); });
+      scrubbable(num, label);
+    });
+  }
+
+  function syncNumbers(force) {
+    $$('input[data-numfor]').forEach(function (num) {
+      var rng = num._range, k = +num.dataset.scale, v = KC.get(state, P(num.dataset.numfor));
+      num.min = rng.min * k; num.max = rng.max * k; num.step = rng.step * k;
+      if (v === undefined) { num.value = ''; return; }
+      if (document.activeElement !== rng) rng.value = v;
+      if (!force && document.activeElement === num) return;   // don't fight typing
+      var dp = Math.min(4, (String(+(rng.step * k).toFixed(6)).split('.')[1] || '').length);
+      num.value = (v * k).toFixed(dp).replace(/\.?0+$/, '') || '0';
+    });
+  }
+
   function coerce(path, raw) {
     var cur = KC.get(state, P(path));
     if (typeof cur === 'number') return parseFloat(raw);
@@ -337,6 +452,7 @@
     pct: function (v) { return Math.round(v * 100) + '%'; }
   };
   function labels() {
+    syncNumbers();
     $$('[data-val]').forEach(function (el) {
       var v = KC.get(state, P(el.dataset.val));
       if (v === undefined) { el.textContent = ''; return; }
@@ -474,15 +590,43 @@
     $('#stat-mass').innerHTML = '<b>' + grams.toFixed(2) + '</b> g · ' + Math.round(ms) + ' ms';
   }
 
+  /* Notices stay above the build warnings until dismissed, since those are
+     redrawn on every rebuild. */
+  var notices = [], lastWarnings = [];
+  function notice(level, msg, link) {
+    notices = notices.filter(function (n) { return n.msg !== msg; });
+    notices.push({ level: level, msg: msg, link: link });
+    showWarnings(lastWarnings);
+  }
+
   function showWarnings(list) {
+    lastWarnings = list || [];
     var box = $('#warnings');
     box.innerHTML = '';
-    (list || []).forEach(function (w) {
+    notices.forEach(function (n) {
+      var d = document.createElement('div');
+      d.className = 'w ' + n.level + ' notice';
+      d.innerHTML = '<span class="ic">' + (n.level === 'warn' ? '▲' : 'ⓘ') + '</span><span class="msg"></span>' +
+        '<button type="button" class="ghost iconbtn" aria-label="Dismiss">✕</button>';
+      d.querySelector('.msg').textContent = n.msg;
+      if (n.link) {
+        var inp = document.createElement('input');
+        inp.readOnly = true; inp.value = n.link; inp.className = 'sharelink';
+        inp.addEventListener('focus', function () { inp.select(); });
+        d.querySelector('.msg').appendChild(inp);
+      }
+      d.lastChild.addEventListener('click', function () {
+        notices.splice(notices.indexOf(n), 1);
+        showWarnings(lastWarnings);
+      });
+      box.appendChild(d);
+    });
+    lastWarnings.forEach(function (w) {
       var d = document.createElement('div');
       d.className = 'w ' + w.level;
       d.innerHTML = '<span class="ic">' +
-        (w.level === 'bad' ? '●' : w.level === 'warn' ? '▲' : 'ⓘ') +
-        '</span><span>' + w.msg + '</span>';
+        (w.level === 'bad' ? '●' : w.level === 'warn' ? '▲' : 'ⓘ') + '</span><span></span>';
+      d.lastChild.textContent = w.msg;
       box.appendChild(d);
     });
   }
@@ -774,6 +918,7 @@
                   safeName() + '.keychain.json');
     });
 
+    $('#btn-share').addEventListener('click', shareLink);
     $('#btn-load').addEventListener('click', function () { $('#loadfile').click(); });
     $('#loadfile').addEventListener('change', function (e) {
       var f = e.target.files && e.target.files[0];
@@ -814,6 +959,60 @@
     refresh();
     paintSide();
     apply();
+  }
+
+  /* ── share links ──────────────────────────────────────────────────
+     The settings travel in the link; pictures and a drawn outline do not, as
+     they would make it far too long. */
+  function pictureCount() {
+    return Object.keys(KC.assets.images).length + Object.keys(KC.assets.drawings).length +
+           (KC.assets.customShape ? 1 : 0);
+  }
+  function plural(n, one, many) { return n === 1 ? one : n + ' ' + many; }
+  function shareLink() {
+    var pics = pictureCount(), btn = $('#btn-share');
+    var payload = { version: 2, state: JSON.parse(JSON.stringify(state)), assets: {} };
+    if (pics) payload.picturesLeftOut = pics;
+    KC.shareEncode(payload).then(function (hash) {
+      var url = KC.shareBase() + hash;
+      return KC.copyText(url).then(function (ok) {
+        if (ok) KC.flashButton(btn, 'Copied ✓');
+        var body = [];
+        body.push(ok ? 'Anyone with this link can open the design and carry on editing their own copy.'
+                     : 'Your browser blocked the clipboard here; copy the link above.');
+        if (url.length > 8000) body.push('It is a long link, so some chat apps may cut it short.');
+        if (pics) {
+          body.push({ warn: true, text: 'Not included: ' + plural(pics, 'a picture or drawn outline', 'pictures or drawn outlines') +
+                     '. Links cannot carry those — to share the design complete, send the file from Save (.keychain.json) or the exported 3MF.' });
+        }
+        KC.sharePopup({ anchor: btn, title: ok ? 'Link copied' : 'Share this link', link: url, linkCopied: ok, body: body });
+      });
+    }).catch(function (err) {
+      KC.sharePopup({ anchor: btn, kind: 'warn', title: 'Could not make a link', body: [err.message] });
+    });
+  }
+
+  /* Opens a design from the link, if it carries one. Returns whether it does;
+     done() runs once the design is in place. */
+  function openSharedLink(done) {
+    if (location.hash.indexOf('#d=') !== 0) return false;
+    KC.shareDecode(location.hash).then(function (p) {
+      history.replaceState(null, '', KC.shareBase());   // later refreshes use the session
+      loadPayload(p, function () {
+        done();
+        var n = p.picturesLeftOut;
+        KC.sharePopup({ title: 'Opened a shared design', kind: n ? 'warn' : 'ok', body: n
+          ? [{ warn: true, text: 'It had ' + plural(n, 'a picture or drawn outline', 'pictures or drawn outlines') +
+               ' that links cannot carry. Ask the sender for the design file to get ' + (n === 1 ? 'it' : 'them') + '.' }]
+          : ['Changes you make stay in your own copy.'] });
+      });
+    }).catch(function () {
+      history.replaceState(null, '', KC.shareBase());
+      KC.sharePopup({ kind: 'warn', title: 'That link could not be opened',
+        body: ['It looks damaged or cut short. Ask for it again, or for the design file.'] });
+      if (!restoreSession(done)) done();
+    });
+    return true;
   }
 
   /* ── design payload (shared by file save/load and session storage) ── */
@@ -1032,6 +1231,7 @@
       viewer = { failed: true, setModel: function () {}, draw: function () {}, frame: function () {} };
     }
 
+    enhanceNumbers();
     bind();
     bindHistory();
     bindSides();
@@ -1040,10 +1240,11 @@
     assets();
     exports_();
 
-    var restoring = restoreSession(function (note) {
-      afterLoad();
-      if (note) showWarnings([{ level: 'warn', msg: note }]);
-    });
+    var restoring = openSharedLink(afterLoad) ||
+      restoreSession(function (note) {
+        afterLoad();
+        if (note) notice('warn', note);
+      });
     refresh();
 
     var ro = new ResizeObserver(function () {

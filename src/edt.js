@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* edt.js — exact Euclidean distance transform, used to offset outlines.
  *
  * Offsetting an arbitrary polygon inwards is fiddly; on a raster it is just a

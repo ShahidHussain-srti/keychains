@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* export.js — 3MF (multi-colour) and STL (single body) writers.
  *
  * Layout follows how Bambu Studio actually writes a multi-colour file: one mesh
@@ -115,8 +117,9 @@ window.KC = window.KC || {};
     xml.push('<resources>');
 
     xml.push('<basematerials id="' + MATGROUP + '">');
-    slots.forEach(function (sl) {
-      xml.push('<base name="Colour ' + (sl.index + 1) + '" displaycolor="' +
+    // Named in order of use, so "Colour 2" is the part on extruder 2.
+    slots.forEach(function (sl, i) {
+      xml.push('<base name="Colour ' + (i + 1) + '" displaycolor="' +
                sl.color.toUpperCase() + 'FF"/>');
     });
     xml.push('</basematerials>');
@@ -227,6 +230,8 @@ window.KC = window.KC || {};
     for (var h = 0; h < header.length; h++) dv.setUint8(h, header.charCodeAt(h));
     dv.setUint32(80, total, true);
 
+    // Moved so the mesh sits on the bed at the origin, as the 3MF does.
+    var bb = bounds(model.parts);
     var off = 84;
     model.parts.forEach(function (part) {
       var p = part.positions, ix = part.indices;
@@ -242,9 +247,9 @@ window.KC = window.KC || {};
         dv.setFloat32(off + 8, nz / len, true);
         var o = off + 12;
         [a, b, c].forEach(function (v) {
-          dv.setFloat32(o, p[v], true);
-          dv.setFloat32(o + 4, p[v + 1], true);
-          dv.setFloat32(o + 8, p[v + 2], true);
+          dv.setFloat32(o, p[v] - bb.minX, true);
+          dv.setFloat32(o + 4, p[v + 1] - bb.minY, true);
+          dv.setFloat32(o + 8, p[v + 2] - bb.minZ, true);
           o += 12;
         });
         dv.setUint16(off + 48, 0, true);

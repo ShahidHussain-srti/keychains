@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* gl.js — small flat-shaded WebGL viewer with orbit controls.
  * Renders the very mesh that gets exported, so the preview cannot drift from
  * the file.

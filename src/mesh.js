@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* mesh.js — masks → colour-separated, watertight extrusions.
  *
  * Colour regions are made mutually exclusive in 2-D before anything is

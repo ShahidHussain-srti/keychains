@@ -1,69 +1,99 @@
 # Keychain Studio
 
-Design a keychain in the browser, export a 3D-printable multi-colour `.3mf`.
+**Try it here: https://shahidhussain-srti.github.io/keychains/**
 
-No dependencies, no build step — **double-click `index.html`**.
+Keychain Studio is a small browser app for designing 3D-printable keychains. Pick a shape,
+add text, a border or a picture, choose colours, and export a multi-colour `.3mf` that
+slicers open with the colours already assigned.
 
-## Controls
+There's nothing to install and no build step. Use the link above, or download the repo
+and double-click `index.html`.
 
-- **Shape** — 12 presets or draw your own outline; up to 250 mm, corner radius, thickness
-- **Sides** — front and back decorated independently, each with its own relief style;
-  copy one to the other, or switch one off
-- **Relief** — raised, inlay (recessed or cut through), or engraved — per face, so you can
-  emboss the front and engrave the back
-- **Border** — 16 styles: lines, dashes, dots, beads, ticks, wave, zigzag, scallop, braid;
-  inset to 0 for a flush rim; can trace a different shape than the plate
-- **Text** — any number of text boxes per face, each with its own font, size, colour and
-  placement; 47 fonts, solid or outlined, spacing/rotation, multiple lines
-- **Pictures** — any number per face; upload an image or draw one in the built-in pad
-- **Colour** — one per element, so a design needs as many filaments as you give it
-  distinct colours, and no more
-- **Keyring hole** — 5 presets or drag it anywhere
+## What you can do
 
-Click text, picture or hole in the Layout view to select; drag or arrow-key to move.
-`⌘Z`/`Ctrl+Z` undoes anything. Work survives a refresh; **Reset** starts over.
+- **Shape**: 12 presets, or draw your own outline. Up to 250 mm, with adjustable corner
+  radius and thickness.
+- **Two sides**: decorate the front and back separately, copy one to the other, or leave
+  one plain.
+- **Relief per side**: raised, inlaid (recessed or cut right through) or engraved, so you
+  can emboss the front and engrave the back.
+- **Borders**: 16 styles, including lines, dashes, dots, beads, waves, zigzags, scallops
+  and braids. Set the inset to 0 for a flush rim, or have the border follow a different
+  shape from the plate.
+- **Text**: as many text boxes as you want, each with its own font, size, colour and
+  position. There are 47 fonts, solid or outlined, with spacing, rotation and multiple
+  lines.
+- **Pictures**: upload an image or sketch one in the built-in drawing pad.
+- **Colours**: one per element. A design needs only as many filaments as it has distinct
+  colours.
+- **Keyring hole**: pick one of five positions or drag it wherever you want.
+
+Click text, a picture or the hole in the layout view to select it, then drag it or nudge
+it with the arrow keys. Every slider has a number box next to it: type an exact value, or
+drag sideways on the label or the edge of the box (Shift for bigger steps, Alt for finer).
+
+`⌘Z` / `Ctrl+Z` undoes anything, and your work survives a refresh. **Save** and **Load**
+keep a design as a `.keychain.json` file.
+
+**Share** copies a link that opens your design for whoever you send it to. The design is
+packed into the link itself, after the `#`, so nothing is uploaded anywhere. Pictures and
+hand-drawn outlines are too big to fit, though, so for those send the saved file or the
+exported 3MF instead.
 
 ## Printing
 
-Import the `.3mf` into PrusaSlicer, OrcaSlicer, Bambu Studio or Creality Print. It arrives
-as one object whose parts are pre-assigned to extruders, numbered from 1 in order of use.
-Every part is independently watertight with outward normals. **STL** exports a
-single-colour mesh instead.
+Open the `.3mf` in Bambu Studio, OrcaSlicer, Creality Print or PrusaSlicer. It arrives as
+one object with each colour already on its own extruder, numbered from 1 in the order
+they're used. Every part is a closed, watertight solid. **STL** gives you a single-colour
+mesh instead.
 
-The layout follows how Bambu Studio itself writes a multi-colour file: one mesh object per
-colour, gathered by an assembly object's `<components>`, with
-`Metadata/model_settings.config` keying each `<part>` by the *component's objectid* and
-giving it an extruder. That id link is what makes colour stick. `Slic3r_PE_model.config`
-states the same thing as triangle ranges for PrusaSlicer. Core `basematerials` are also
-written for viewers, but slicers ignore them — a real Bambu file contains none, which is
-why a file relying on them imports as a single colour.
+The file is laid out the way Bambu Studio writes its own multi-colour files: one mesh per
+colour, grouped under an assembly, with `Metadata/model_settings.config` pointing each part
+at its extruder. That link is what makes the colours stick. `Slic3r_PE_model.config` says
+the same thing for PrusaSlicer. Most generators rely on the 3MF `basematerials` alone,
+which slicers ignore, so the model ends up as a single colour.
 
-Colour needs a multi-material printer (AMS / CFS / MMU). On a single-extruder machine the
-3D view may show the colours while the **print preview stays one colour**: the slicer maps
-every part to extruder 1 and the file cannot override that. In **raised** mode each colour
-sits in its own band of layers, so a manual filament change gives the same result — the
-warnings strip tells you the exact layer.
+Multi-colour needs an AMS, CFS or MMU. On a single-extruder printer the slicer puts every
+part on extruder 1, whatever the file says. In **raised** mode each colour gets its own
+band of layers, though, so a manual filament change works just as well, and the warnings
+strip tells you which layer to swap at.
 
-Set **layer height** to match your slicer: every thickness is a whole multiple of it and
-at least 3 layers, so nothing asks for a partial layer.
+Set **layer height** to match your slicer. Every thickness is a whole number of layers, and
+at least three, so nothing ever asks for a partial layer.
 
-## Notes
+A few things worth knowing:
 
-- Multi-colour needs an AMS/MMU or manual swaps. Engraved and single-colour raised
-  designs print on anything.
-- A through-cut inlay is one void through the plate, so it shows on both faces and can
-  carry only one design. Decorate both faces and it recesses into each instead.
-- Back-face detail prints against the bed — put the busier face up.
-- Details under ~0.8 mm wide get flagged; watch the warnings strip.
+- Engraved and single-colour raised designs print on anything.
+- A cut-through inlay goes all the way through the plate, so it shows on both sides and
+  can only carry one design. If you decorate both faces, each one gets recessed instead.
+- The back prints against the bed, so put the busier side on the front.
+- Details thinner than about 0.8 mm get flagged in the warnings.
 
 ## How it works
 
-Every element is rasterised to an anti-aliased mask in mm space, then
-`marching squares → simplify → ear clipping → extrude`. One representation gives colour
-separation as a 2-D boolean, border offsetting as a distance threshold (so it hugs any
-outline, hand-drawn included), and text without font parsing. The back face reuses all of
-it, mirrored. The 3D view renders the exported mesh, so it cannot drift from the file.
+Every element is drawn to an anti-aliased mask in millimetre space, then traced with
+marching squares, simplified, triangulated and extruded. Working from masks makes a lot of
+things easy: colour separation is a 2D subtraction, borders are a distance threshold (so
+they follow any outline, even hand-drawn ones), and text needs no font parsing. The back
+face reuses all of it, mirrored. The 3D view shows the exact mesh that gets exported.
 
-`util` state + depth rules · `earcut` triangulation · `edt` distance fields ·
-`contour` tracing · `shapes` outlines · `raster` masks · `mesh` extrusion ·
-`zip`/`export` 3MF+STL · `gl` viewer · `preview` layout · `drawpad` · `app` wiring
+Files in `src/`: `util` state and depth rules, `earcut` triangulation, `edt` distance
+fields, `contour` tracing, `shapes` outlines, `raster` masks, `mesh` extrusion,
+`zip`/`export` 3MF and STL, `share` links, `gl` 3D view, `preview` layout view, `drawpad`,
+and `app` to wire it together.
+
+If you need a case rather than a keychain, have a look at
+[Dabba](https://shahidhussain-srti.github.io/dabba/), which grew out of this project.
+
+## License
+
+Copyright © 2026 shahidhussain2k13@gmail.com
+
+Keychain Studio is free software under the **GNU General Public License v3.0 or later**.
+You can use it, change it and share it. If you distribute something built from it,
+including hosting a modified copy on a website, that has to be GPL with its source
+available too. There's no warranty. See [LICENSE](LICENSE) for the full text.
+
+`src/earcut.js` is ported from [earcut](https://github.com/mapbox/earcut), © 2016 Mapbox,
+under the ISC License ([src/LICENSE-earcut.txt](src/LICENSE-earcut.txt)), which is
+compatible with the GPL.

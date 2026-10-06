@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* util.js — namespace, defaults, small helpers shared by every module. */
 window.KC = window.KC || {};
 (function (KC) {

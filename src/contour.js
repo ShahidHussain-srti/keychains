@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* contour.js — mask → polygons.
  *
  * Marching squares at iso 0.5 with linear interpolation along cell edges, so

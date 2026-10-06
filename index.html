@@ -1,9 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+     Licensed under the GNU General Public License v3.0 or later; see LICENSE. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keychain Studio — 3MF generator</title>
+<title>Keychain Studio — design multi-colour 3D-printed keychains</title>
+<meta name="description" content="Free browser app for designing 3D-printable keychains with text, borders and pictures. Exports multi-colour 3MF files with colours pre-assigned for Bambu Studio, OrcaSlicer and PrusaSlicer.">
+<link rel="canonical" href="https://shahidhussain-srti.github.io/keychains/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Keychain Studio — design multi-colour 3D-printed keychains">
+<meta property="og:description" content="Free browser app for designing 3D-printable keychains with text, borders and pictures. Exports multi-colour 3MF files with colours pre-assigned for Bambu Studio, OrcaSlicer and PrusaSlicer.">
+<meta property="og:url" content="https://shahidhussain-srti.github.io/keychains/">
+<meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 </head>
@@ -24,6 +33,7 @@
     </select>
   </label>
   <button id="btn-reset" class="ghost" title="Discard this design and start over">Reset</button>
+  <button id="btn-share" class="ghost" title="Copy a link that opens this design">Share</button>
   <button id="btn-save" class="ghost" title="Save design as JSON">Save</button>
   <button id="btn-load" class="ghost" title="Load design JSON">Load</button>
   <button id="btn-stl" class="ghost" title="Single-colour mesh">STL</button>
@@ -205,7 +215,7 @@
         <div class="itemlist" id="text-list"></div>
         <div class="row inlinerow">
           <button class="ghost" id="btn-add-text">+ Add text box</button>
-          <button class="ghost" id="btn-del-text">Remove</button>
+          <button class="ghost danger" id="btn-del-text">Remove</button>
         </div>
         <div id="text-editor">
           <div class="row">
@@ -275,7 +285,7 @@
         <div class="itemlist" id="art-list"></div>
         <div class="row inlinerow">
           <button class="ghost" id="btn-add-art">+ Add picture</button>
-          <button class="ghost" id="btn-del-art">Remove</button>
+          <button class="ghost danger" id="btn-del-art">Remove</button>
         </div>
         <div id="art-editor">
           <div class="row">
@@ -350,6 +360,9 @@
       </div>
     </section>
 
+    <p class="legal">Keychain Studio · © 2026 shahidhussain2k13@gmail.com · free software under the
+      <a href="LICENSE" target="_blank" rel="noopener">GNU GPL v3 or later</a>.
+      Triangulation ported from <a href="src/LICENSE-earcut.txt" target="_blank" rel="noopener">earcut</a> (ISC).</p>
   </aside>
 
   <!-- ─────────────────────────── viewport ─────────────────────────── -->
@@ -416,6 +429,7 @@
 <script src="src/raster.js"></script>
 <script src="src/mesh.js"></script>
 <script src="src/zip.js"></script>
+<script src="src/share.js"></script>
 <script src="src/export.js"></script>
 <script src="src/gl.js"></script>
 <script src="src/preview.js"></script>

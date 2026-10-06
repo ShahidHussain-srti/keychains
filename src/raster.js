@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* raster.js — every design element, rendered to an anti-aliased alpha mask.
  *
  * Working in mask space buys three things at once: 2-D booleans (so colours

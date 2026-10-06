@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* zip.js — minimal ZIP writer (a 3MF is an OPC package, i.e. a zip).
  * Deflates through the platform CompressionStream when available and falls
  * back to stored entries, which stay perfectly valid.

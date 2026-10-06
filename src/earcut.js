@@ -1,3 +1,7 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE.
+ * Ported from mapbox/earcut, Copyright (c) 2016, Mapbox, ISC License —
+ * see LICENSE-earcut.txt. */
 /* earcut.js — polygon triangulation by ear clipping.
  *
  * Handles holes by bridging each hole into the outer ring, and uses a z-order

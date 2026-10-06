@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* shapes.js — parametric outlines.
  *
  * Every preset is expressed as a path in a canvas context using a caller

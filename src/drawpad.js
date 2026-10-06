@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* drawpad.js — freehand editor, shared by "custom outline" and "picture".
  * For outlines it flood-fills enclosed regions on apply, so a sketched loop
  * becomes a solid silhouette.

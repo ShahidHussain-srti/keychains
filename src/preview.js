@@ -1,3 +1,5 @@
+/* Keychain Studio. Copyright (C) 2026 shahidhussain2k13@gmail.com
+ * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
 /* preview.js — the Layout view: a crisp, vector-drawn top-down render you can
  * drag elements around in. Redraws on every keystroke, so it never touches the
  * mesh pipeline; the border ring is the one exception and is cached.

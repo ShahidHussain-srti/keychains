@@ -1052,7 +1052,7 @@
         // Dragging mutates state directly rather than through the binder, so it
         // has to save explicitly — otherwise a dragged position is lost on
         // refresh while the same change made with a slider survives.
-        if (dragging) { rebuild(); persist(); return; }
+        if (dragging) { labels(); rebuild(); persist(); return; }   // number boxes follow the drag
         refresh();      // a finished drag can change a <select> (hole → custom)
         apply();        // …and apply() is what saves the session
       },

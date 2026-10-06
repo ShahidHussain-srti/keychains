@@ -78,10 +78,14 @@ things easy: colour separation is a 2D subtraction, borders are a distance thres
 they follow any outline, even hand-drawn ones), and text needs no font parsing. The back
 face reuses all of it, mirrored. The 3D view shows the exact mesh that gets exported.
 
-Files in `src/`: `util` state and depth rules, `earcut` triangulation, `edt` distance
-fields, `contour` tracing, `shapes` outlines, `raster` masks, `mesh` extrusion,
-`zip`/`export` 3MF and STL, `share` links, `gl` 3D view, `preview` layout view, `drawpad`,
-and `app` to wire it together.
+Files in `src/`: `util` state and depth rules, `earcut` triangulation, `raster` the plate
+and hole masks, `mesh` extrusion, `export` the keychain as a printable object, `gl` 3D view,
+`preview` layout view, and `app` to wire it together.
+
+The parts Keychain Studio shares with Dabba (masks and contours, borders, text and
+pictures, the 3MF writer, share links, undo, number fields and most of the styling) live in
+[Workbench](https://github.com/ShahidHussain-srti/workbench), copied into
+`vendor/workbench/`.
 
 If you need a case rather than a keychain, have a look at
 [Dabba](https://shahidhussain-srti.github.io/dabba/), which grew out of this project.
@@ -98,3 +102,6 @@ available too. There's no warranty. See [LICENSE](LICENSE) for the full text.
 `src/earcut.js` is ported from [earcut](https://github.com/mapbox/earcut), © 2016 Mapbox,
 under the ISC License ([src/LICENSE-earcut.txt](src/LICENSE-earcut.txt)), which is
 compatible with the GPL.
+
+`vendor/workbench/` is [Workbench](https://github.com/ShahidHussain-srti/workbench), by the
+same author under the same license.

@@ -61,14 +61,9 @@ window.KC = window.KC || {};
 
   /* Bitmaps live outside the serialisable state, keyed by the picture's id.
      The plate outline is shared by both faces. */
-  KC.assets = { customShape: null, images: {}, drawings: {} };
+  KC.assets = WB.assets;          // pictures, shared with the library's decoration code
+  KC.assets.customShape = null;
 
-  KC.artBitmap = function (art) {
-    if (!art) return null;
-    if (art.source === 'image') return KC.assets.images[art.id] || null;
-    if (art.source === 'draw') return KC.assets.drawings[art.id] || null;
-    return null;
-  };
 
   /* Every element on a face, bottom to top: the border first, then pictures,
      then text. Later entries win where they overlap. */
@@ -189,6 +184,9 @@ window.KC = window.KC || {};
     return { style: 'inlay', depth: inl.depth, cut: inl.through ? T : inl.depth,
              through: inl.through, rel: rel, inl: inl };
   };
+
+  /* The plate as a face outline for the decoration code: {w, h} in mm. */
+  KC.faceOutline = function (state) { return KC.plateSize(state); };
 
   /* Effective plate size honouring the "locked" presets. */
   KC.plateSize = function (state) {

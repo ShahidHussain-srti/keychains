@@ -24,7 +24,7 @@
     });
 
     var bs = $('#f-b-style');
-    KC.BORDER_STYLES.forEach(function (st) {
+    WB.BORDER_STYLES.forEach(function (st) {
       var o = document.createElement('option');
       o.value = st[0]; o.textContent = st[1];
       bs.appendChild(o);
@@ -534,7 +534,7 @@
     var inl = KC.inlayDepthOf(state);
     /* The two shared border numbers mean different things per style. */
     var bstyle = state.sides[state.activeSide].border.style;
-    var wavy = KC.isWavyBorder(bstyle);
+    var wavy = WB.isWavyBorder(bstyle);
     var gl = $('#lbl-b-gap'), dl = $('#lbl-b-dashes');
     if (gl) gl.textContent = wavy ? 'Wave depth' : 'Gap';
     if (dl) dl.textContent = wavy ? 'Waves' : 'Count';

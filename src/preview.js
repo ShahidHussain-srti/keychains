@@ -166,13 +166,13 @@ window.KC = window.KC || {};
           return;
         }
         if (e.kind === 'text') {
-          KC.drawText(feat.g, e.item, t, { fill: e.item.color });
+          WB.drawText(feat.g, e.item, t, { fill: e.item.color });
           return;
         }
         if (e.item.source === 'none') return;
         var art = layer('prevart');
-        if (!KC.drawArt(art.g, e.item, t)) return;
-        if (KC.resolveArtMode(e.item) !== 'alpha') {
+        if (!WB.drawArt(art.g, e.item, t)) return;
+        if (WB.resolveArtMode(e.item) !== 'alpha') {
           // keep a thresholded photo readable while it is being tuned
           art.g.globalCompositeOperation = 'source-atop';
           art.g.fillStyle = e.item.color;
@@ -291,7 +291,7 @@ window.KC = window.KC || {};
       var ppmm = WB.clamp(900 / Math.max(sz.w, sz.h), 8, 18);
       var g = KC.makeGrid(state, ppmm);
       var plate = KC.plateMask(state, g);
-      var ring = KC.borderMask(fs, g, plate);
+      var ring = WB.borderMask(fs.border, KC.faceOutline(fs), g, plate);
       var cv = document.createElement('canvas');
       cv.width = g.cols; cv.height = g.rows;
       if (ring) {
@@ -333,14 +333,14 @@ window.KC = window.KC || {};
     if (!face.enabled) return out;
 
     (face.arts || []).forEach(function (a, i) {
-      var p = KC.artPlacement(a, t);
+      var p = WB.artPlacement(a, t);
       if (!p) return;
       out.push({ key: 'art:' + i, label: 'Picture ' + (i + 1), cx: p.cx, cy: p.cy,
                  w: p.w, h: p.h, rot: -a.rotation * Math.PI / 180 });
     });
 
     (face.texts || []).forEach(function (tx, i) {
-      var L = KC.textLayout(ctx, tx, t);
+      var L = WB.textLayout(ctx, tx, t);
       if (!L || L.width < 4) return;
       out.push({ key: 'text:' + i, label: 'Text ' + (i + 1),
                  cx: t.ox + tx.x * t.s, cy: t.oy - tx.y * t.s,
@@ -352,7 +352,7 @@ window.KC = window.KC || {};
   /* Straight from the shared layout, so the box hugs the same ink the mesh is
      built from — including the vertical centring. */
   Preview.prototype._textMetrics = function (t) {
-    var L = KC.textLayout(this.canvas.getContext('2d'), this.el('text'), t);
+    var L = WB.textLayout(this.canvas.getContext('2d'), this.el('text'), t);
     if (!L || L.width < 4) return null;
     return { w: L.width + 6, h: L.height + 4 };
   };

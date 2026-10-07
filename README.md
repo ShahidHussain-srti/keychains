@@ -120,8 +120,8 @@ You can use it, change it and share it. If you distribute something built from i
 including hosting a modified copy on a website, that has to be GPL with its source
 available too. There's no warranty. See [LICENSE](LICENSE) for the full text.
 
-`vendor/workbench/manifold.js` is [Manifold](https://github.com/elalish/manifold), © The
-Manifold Authors, under the Apache License 2.0
+`vendor/workbench/manifold.js`, `manifold.wasm` and `manifold-wasm.js` are
+[Manifold](https://github.com/elalish/manifold), © The Manifold Authors, under the Apache License 2.0
 ([vendor/workbench/LICENSE-manifold.txt](vendor/workbench/LICENSE-manifold.txt)), which is
 compatible with the GPL.
 

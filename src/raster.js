@@ -87,7 +87,7 @@ window.KC = window.KC || {};
 
   function fitHole(state, ax, ay, r, margin) {
     var g = KC.makeGrid(state, 6);          // coarse is plenty for placement
-    var d = WB.sdf(KC.plateMask(state, g), g);
+    var d = WB.sdf(KC.plateMask(state, g), g, true);   // only room inside matters
     var need = r + margin;
 
     function clearance(x, y) {

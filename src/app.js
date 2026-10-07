@@ -555,9 +555,9 @@
       preview.invalidateBorder();
       refresh();
       paintSide();
-    } else if (path && (path.indexOf('~.border') === 0 || path.indexOf('shape') === 0)) {
-      preview.invalidateBorder();
     }
+    // Border and shape edits need no invalidating: the ring's cache key holds
+    // them, and leaving the cache lets a drag reuse the last ring.
     apply();
   }
 
@@ -831,7 +831,8 @@
       var fr = new FileReader();
       fr.onload = function () {
         try {
-          loadAsStep(JSON.parse(fr.result), afterLoad);
+          session.duplicate();                 // a new design; the one on screen stays in the list
+          loadAsStep(JSON.parse(fr.result), function () { state.name = session.uniqueName(state.name); afterLoad(); });
         } catch (err) {
           showWarnings([{ level: 'bad', msg: 'That file could not be loaded: ' + err.message }]);
         }
@@ -875,11 +876,12 @@
   }
   function newDesign() {
     session.saveNow();
+    session.startNew();                     // first, so the open design's name counts as taken
     toDefaults();
     state.name = session.uniqueName(KC.defaults().name);
     afterLoad();
     if (undoHistory) undoHistory.clear();
-    session.startNew();
+    session.settled();
     setTimeout(function () { session.settled(); }, 0);
   }
   function duplicateDesign() {
@@ -960,12 +962,16 @@
     // loaded is not the link's fault and must not load a second time.
     WB.shareDecode(location.hash).then(function (p) {
       if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('not a design');
+      if (p.state != null && (typeof p.state !== 'object' || Array.isArray(p.state))) throw new Error('not a design');
       // A short link holds only the changes from the defaults.
       if (p.diff) p.state = WB.sharePatch(JSON.parse(JSON.stringify(KC.defaults())), p.state || {});
       return p;
     }).then(function (p) {
       history.replaceState(null, '', WB.shareBase());   // later refreshes use the session
+      // Into a tab that already has a design: a new one, so that one stays in the list.
+      if (inTab) session.duplicate();
       loadPayload(p, function () {
+        if (inTab) state.name = session.uniqueName(state.name);
         done();
         var n = p.picturesLeftOut;
         WB.sharePopup({ title: 'Opened a shared design', kind: n ? 'warn' : 'ok', body: n
@@ -1009,7 +1015,11 @@
   function sanitize(d) {
     WB.cleanColours(d, KC.defaults());
     var sides = [d.sides.front, d.sides.back];
-    sides.forEach(function (f) { f.texts = f.texts.slice(0, MAX_ITEMS); f.arts = f.arts.slice(0, MAX_ITEMS); });
+    sides.forEach(function (f) {
+      f.texts = f.texts.slice(0, MAX_ITEMS); f.arts = f.arts.slice(0, MAX_ITEMS);
+      f.textIdx = WB.clamp(f.textIdx || 0, 0, Math.max(0, f.texts.length - 1));
+      f.artIdx = WB.clamp(f.artIdx || 0, 0, Math.max(0, f.arts.length - 1));
+    });
     var texts = [].concat(sides[0].texts, sides[1].texts), arts = [].concat(sides[0].arts, sides[1].arts);
     var fresh = KC.defaults();
     WB.fieldLimits(document, ['f-t-x', 'f-t-y', 'f-a-x', 'f-a-y', 'f-hole-x', 'f-hole-y', 'f-shape-thickness', 'f-inlayDepth', 'f-reliefHeight']).forEach(function (L) {
@@ -1182,7 +1192,10 @@
   function clearSession() { session.clear(); }
   /* Returns true when a stored design is being restored. */
   function restoreSession(done) { return session.restore(done); }
-  var session = new WB.Session({ key: 'keychain-studio.session.v2', build: buildPayload, load: loadPayload });
+  var session = new WB.Session({ key: 'keychain-studio.session.v2', build: buildPayload, load: loadPayload,
+    // A copy made because another tab had written the design meanwhile.
+    rename: function (name) { state.name = name; refresh(); },
+    failed: function (msg) { notice('warn', msg); } });
   var storageOK = session.ok;
   function persist() { session.save(); }
 

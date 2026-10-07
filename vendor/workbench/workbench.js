@@ -69,11 +69,12 @@ window.WB = window.WB || {};
     return out;
   };
   /* o[key] kept a finite number within [min, max]; anything else becomes
-     the fallback. Nulls (meaning "automatic") are left alone. */
+     the fallback (which may be null, "automatic"), if one is given. Nulls
+     themselves are left alone. */
   WB.clampField = function (o, key, min, max, fallback) {
     if (!o || typeof o !== 'object' || !(key in o) || o[key] === null) return;
     var v = o[key];
-    if (typeof v !== 'number' || !isFinite(v)) { if (typeof fallback === 'number') o[key] = fallback; return; }
+    if (typeof v !== 'number' || !isFinite(v)) { if (fallback !== undefined) o[key] = fallback; return; }
     o[key] = v < min ? min : v > max ? max : v;
   };
 
@@ -1881,6 +1882,12 @@ window.WB = window.WB || {};
   };
   WB.shareDiff = function (base, obj) {
     if (plain(base) && plain(obj)) {
+      // A key the defaults have and this doesn't can't be said as a change:
+      // send the object whole, so patching doesn't bring the key back.
+      if (Object.keys(base).some(function (k) { return !(k in obj); })) {
+        var whole = round(obj); whole['~'] = 1;             // marked: replace, don't merge
+        return whole;
+      }
       var out = {}, any = false;
       Object.keys(obj).forEach(function (k) {
         var d = WB.shareDiff(base[k], obj[k]);
@@ -1906,6 +1913,12 @@ window.WB = window.WB || {};
     if (diff === undefined) return base;
     if (!plain(base) || !plain(diff)) return diff;
     var out = {};
+    if (diff['~'] === 1) {                                  // a whole object, as it was sent
+      Object.keys(diff).forEach(function (k) {
+        if (k !== '~' && k !== '__proto__' && k !== 'constructor' && k !== 'prototype') out[k] = diff[k];
+      });
+      return out;
+    }
     Object.keys(base).forEach(function (k) { out[k] = base[k]; });
     Object.keys(diff).forEach(function (k) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
@@ -2507,21 +2520,31 @@ window.WB = window.WB || {};
      Every design lives under its own key in localStorage, with an index of
      them all, so one browser can hold many. Each tab remembers (in
      sessionStorage, which a refresh keeps) which design it has open, and
-     marks it as open with a heartbeat, so two tabs never write over the same
-     design: a tab that finds its design open elsewhere (a duplicated tab)
-     carries on in a copy, and a new tab picks up the latest design nobody
-     has open. Pictures are stored too, but dropped rather than losing the
-     design if the quota is hit. Nothing leaves the browser.
+     marks it as open with a heartbeat, so a new tab leaves it alone.
 
-     opts: { key, build() → payload, load(payload, done) }
-     A payload's state.name is the name the design is listed under. */
+     Timers stall in background tabs, so the heartbeat alone can't be
+     trusted; what keeps work safe is that a tab only writes a design it was
+     the last to write: each design carries a revision, and a tab that finds
+     someone else's newer revision (or its lock taken) carries on in a copy
+     instead. Nothing is written when nothing changed, and nothing while a
+     design is still loading. Deleting a design, or everything, in one tab is
+     noticed by the others, which then treat what's on their screen as new.
+     Pictures are stored too, but dropped rather than losing the design if
+     the quota is hit. Nothing leaves the browser.
+
+     opts: { key, build() → payload, load(payload, done), rename(name)?,
+             failed(message)? }. A payload's state.name is its listed name. */
   var BEAT = 2500, STALE = 7000;
   var tabToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   WB.Session = function (opts) {
     this.opts = opts;
     this.id = null;
-    this.baseline = null;
+    this.rev = 0;               // the revision this tab last loaded or wrote
+    this.last = null;           // JSON last loaded or written, to skip no-op saves
+    this.baseline = null;       // a new design isn't kept until it differs from this
+    this.loading = false;
+    this.warned = false;
     var self = this;
     this.ok = (function () {
       try {
@@ -2534,8 +2557,13 @@ window.WB = window.WB || {};
     if (!this.ok) return;
     this._migrate();
     setInterval(function () { self._claim(); }, BEAT);
-    // Let go on the way out, so a refresh can pick the same design up again.
+    // Let go on the way out, so a refresh can pick the same design up again;
+    // check again on the way back (a frozen or cached page may have been
+    // thought gone).
     window.addEventListener('pagehide', function () { self.saveNow(); self._release(); });
+    window.addEventListener('pageshow', function () { self._claim(); });
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) self._claim(); });
+    window.addEventListener('storage', function (e) { self._changed(e); });
   };
   var S = WB.Session.prototype;
 
@@ -2548,50 +2576,82 @@ window.WB = window.WB || {};
       return Array.isArray(l) ? l.filter(function (d) { return d && typeof d.id === 'string'; }) : [];
     } catch (e) { return []; }
   };
-  S._writeIndex = function (l) { try { this._set('.index', JSON.stringify(l)); } catch (e) { /* keep going */ } };
+  S._entry = function (id) { return this._index().filter(function (d) { return d.id === id; })[0] || null; };
   S._tab = function (v) {
     var k = this.opts.key + '.tab';
     try { if (v === undefined) return sessionStorage.getItem(k); if (v) sessionStorage.setItem(k, v); else sessionStorage.removeItem(k); }
     catch (e) { return null; }
     return null;
   };
+  S._fail = function (msg) {
+    if (this.warned) return;
+    this.warned = true;
+    if (this.opts.failed) this.opts.failed(msg);
+  };
 
   /* The single design kept before there could be many becomes the first. */
   S._migrate = function () {
     var old = this._get('');
     if (!old) return;
+    this._del('');                          // first, so a second tab starting now doesn't copy it too
     var id = WB.newId('d'), name = 'Design';
     try { name = (JSON.parse(old).state || {}).name || name; } catch (e) { /* unnamed */ }
     try {
       this._set('.d.' + id, old);
-      var l = this._index(); l.push({ id: id, name: String(name), t: Date.now() }); this._writeIndex(l);
-      this._del('');
-    } catch (e) { /* leave it where it is */ }
+      var l = this._index(); l.push({ id: id, name: String(name), t: Date.now(), rev: 1 });
+      this._set('.index', JSON.stringify(l));
+    } catch (e) { try { this._set('', old); } catch (e2) { /* nowhere to put it */ } }
   };
 
   /* Is this design open in another live tab? */
-  S.openElsewhere = function (id) {
-    try {
-      var m = JSON.parse(this._get('.open.' + id) || 'null');
-      return !!m && m.tab !== tabToken && Date.now() - m.t < STALE;
-    } catch (e) { return false; }
+  S._lock = function (id) {
+    try { return JSON.parse(this._get('.open.' + id) || 'null'); } catch (e) { return null; }
   };
+  S.openElsewhere = function (id) {
+    var m = this._lock(id);
+    return !!m && m.tab !== tabToken && Date.now() - m.t < STALE;
+  };
+  /* Renew this tab's mark. If another tab has taken the design meanwhile
+     (this one was asleep), let it have it and carry on in a copy. */
   S._claim = function () {
     if (!this.id) return;
+    if (this.openElsewhere(this.id)) { this._fork(); return; }
     try { this._set('.open.' + this.id, JSON.stringify({ tab: tabToken, t: Date.now() })); } catch (e) { /* full */ }
   };
   S._release = function () {
     if (!this.id) return;
-    try {
-      var m = JSON.parse(this._get('.open.' + this.id) || 'null');
-      if (m && m.tab === tabToken) this._del('.open.' + this.id);
-    } catch (e) { /* nothing held */ }
+    var m = this._lock(this.id);
+    if (m && m.tab === tabToken) this._del('.open.' + this.id);
   };
-  S._use = function (id) {
+  S._use = function (id, rev) {
     this._release();
     this.id = id;
+    this.rev = rev || 0;
     this._tab(id);
     this._claim();
+  };
+  /* From the next save on, a copy: the design under the old id is left as
+     the other tab has it. */
+  S._fork = function () {
+    this._release();
+    this.id = null;
+    this.rev = 0;
+    this.last = null;
+    this.baseline = null;
+    this._tab(null);
+    this.forked = true;
+  };
+  /* Another tab deleted this design, or everything: what's on screen here
+     becomes a new design, kept only if it is changed. */
+  S._changed = function (e) {
+    var pre = this.opts.key;
+    if (!this.id || (e.key !== null && e.key !== pre + '.d.' + this.id && e.key !== pre + '.index')) return;
+    if (this._get('.d.' + this.id) !== null && this._entry(this.id)) return;
+    this.id = null;
+    this.rev = 0;
+    this.last = null;
+    this._tab(null);
+    this.baseline = JSON.stringify(this.opts.build());
   };
 
   /* The designs, newest first: { id, name, t, here, elsewhere }. */
@@ -2606,32 +2666,63 @@ window.WB = window.WB || {};
   S.uniqueName = function (base) {
     var self = this, names = this._index().filter(function (d) { return d.id !== self.id; }).map(function (d) { return d.name; });
     if (names.indexOf(base) < 0) return base;
-    for (var i = 2; ; i++) if (names.indexOf(base + ' ' + i) < 0) return base + ' ' + i;
+    var root = base.replace(/ \d+$/, '') || base;           // "case 2" taken → "case 3", not "case 2 2"
+    for (var i = 2; ; i++) if (names.indexOf(root + ' ' + i) < 0) return root + ' ' + i;
   };
 
   S.saveNow = function () {
-    if (!this.ok) return;
+    if (!this.ok || this.loading) return;
     var payload = this.opts.build(), json = JSON.stringify(payload);
+    if (json === this.last) return;                       // nothing changed since it was loaded or saved
     // A new design isn't kept until something in it changes, so opening
     // tabs doesn't fill the list with copies of the defaults.
     if (this.baseline !== null) {
       if (json === this.baseline) return;
       this.baseline = null;
     }
-    if (!this.id) this._use(WB.newId('d'));
+    // Someone else wrote it since (a tab that was thought gone): don't
+    // overwrite their work, carry on in a copy.
+    if (this.id) {
+      var cur = this._entry(this.id);
+      if (cur && (cur.rev || 0) !== this.rev) this._fork();
+    }
+    // Kept for the first time (new, copied or forked): under a name of its own.
+    if (!this.id) {
+      this.forked = false;
+      var was = String((payload.state && payload.state.name) || 'Untitled'), nm = this.uniqueName(was);
+      if (nm !== was && payload.state) {
+        payload.state.name = nm;
+        if (this.opts.rename) this.opts.rename(nm);
+        json = JSON.stringify(payload);
+      }
+      this._use(WB.newId('d'), 0);
+    }
+    var id = this.id, name = String((payload.state && payload.state.name) || 'Untitled'), rev = this.rev + 1;
+    var l = this._index().filter(function (d) { return d.id !== id; });
+    l.push({ id: id, name: name, t: Date.now(), rev: rev });
     try {
-      this._set('.d.' + this.id, json);
+      this._set('.d.' + id, json);
     } catch (e) {
       try {                                   // over quota: keep the design at least
         payload.assets = {};
         payload.assetsDropped = true;
-        this._set('.d.' + this.id, JSON.stringify(payload));
-      } catch (e2) { return; }                // give up quietly; the design is still on screen
+        this._set('.d.' + id, JSON.stringify(payload));
+        this._fail('This browser\'s storage is full, so the pictures in this design were not kept. Delete old designs (Designs menu) or use Save to keep a file.');
+      } catch (e2) {
+        this._fail('This browser\'s storage is full, so this design is not being kept here. Delete old designs (Designs menu) or use Save to keep a file.');
+        return;
+      }
     }
-    var l = this._index(), id = this.id, name = String((payload.state && payload.state.name) || 'Untitled');
-    l = l.filter(function (d) { return d.id !== id; });
-    l.push({ id: id, name: name, t: Date.now() });
-    this._writeIndex(l);
+    try {
+      this._set('.index', JSON.stringify(l));
+    } catch (e3) {
+      this._del('.d.' + id);                  // unlisted, it would only take up room
+      this._fail('This browser\'s storage is full, so this design is not being kept here. Delete old designs (Designs menu) or use Save to keep a file.');
+      return;
+    }
+    this.rev = rev;
+    this.last = json;
+    this.warned = false;
   };
 
   /* Forget what is stored for the open design (it is saved again on the next
@@ -2639,14 +2730,21 @@ window.WB = window.WB || {};
   S.clear = function () {
     if (!this.ok || !this.id) return;
     this._del('.d.' + this.id);
+    this.last = null;
   };
 
   S._read = function (id) {
     try { return JSON.parse(this._get('.d.' + id) || 'null'); } catch (e) { return null; }
   };
+  /* While pictures decode the design isn't whole, so nothing is saved until
+     it is in; then what's on screen counts as unchanged. */
   S._load = function (p, done) {
+    var self = this;
+    this.loading = true;
     this.opts.load(p, function () {
+      self.loading = false;
       done(p.assetsDropped ? 'Opened your design, but its pictures were too large to keep in this browser.' : null);
+      self.last = self.id ? JSON.stringify(self.opts.build()) : null;
     });
   };
 
@@ -2655,14 +2753,15 @@ window.WB = window.WB || {};
      Otherwise the app starts a new design. */
   S.restore = function (done) {
     if (!this.ok) return false;
-    var mine = this._tab(), p = mine && this._read(mine);
+    var mine = this._tab(), p = mine && this._read(mine), e;
     if (p) {
       if (this.openElsewhere(mine)) {        // a duplicated tab: carry on in a copy
-        this._use(WB.newId('d'));
-        this.baseline = null;
+        this._fork();
+        this.forked = false;
         if (p.state) p.state.name = this.uniqueName(String(p.state.name || 'Untitled'));
       } else {
-        this._use(mine);
+        e = this._entry(mine);
+        this._use(mine, e ? e.rev || 0 : 0);
       }
       this._load(p, done);
       return true;
@@ -2670,7 +2769,7 @@ window.WB = window.WB || {};
     // A new tab carries on with the latest design, unless another tab has it.
     var latest = this.list()[0], free = latest && !latest.elsewhere ? latest : null;
     var fp = free && this._read(free.id);
-    if (fp) { this._use(free.id); this._load(fp, done); return true; }
+    if (fp) { e = this._entry(free.id); this._use(free.id, e ? e.rev || 0 : 0); this._load(fp, done); return true; }
     this.startNew();
     return false;
   };
@@ -2680,6 +2779,9 @@ window.WB = window.WB || {};
   S.startNew = function () {
     this._release();
     this.id = null;
+    this.rev = 0;
+    this.last = null;
+    this.forked = false;
     this._tab(null);
     this.baseline = this.ok ? JSON.stringify(this.opts.build()) : null;
   };
@@ -2692,20 +2794,26 @@ window.WB = window.WB || {};
 
   /* Open a stored design in this tab, after saving the one on screen. */
   S.open = function (id, done) {
-    var p = this._read(id);
+    var p = this._read(id), e = this._entry(id);
     if (!p) return false;
     this.saveNow();
     this.baseline = null;
-    this._use(id);
+    this.forked = false;
+    this._use(id, e ? e.rev || 0 : 0);
     this._load(p, done || function () {});
     return true;
   };
 
-  /* Keep working on a copy of the design on screen; the original stays. */
+  /* Keep working on a copy of the design on screen; the original stays.
+     Also used before something from outside (a file, a link) replaces what
+     is on screen, so the design it replaces stays in the list. */
   S.duplicate = function () {
     this.saveNow();
     this._release();
     this.id = null;
+    this.rev = 0;
+    this.last = null;
+    this.forked = false;
     this._tab(null);
     this.baseline = null;
   };
@@ -2827,8 +2935,8 @@ window.WB = window.WB || {};
   S.remove = function (id) {
     this._del('.d.' + id);
     this._del('.open.' + id);
-    this._writeIndex(this._index().filter(function (d) { return d.id !== id; }));
-    if (id === this.id) { this.id = null; this._tab(null); }
+    try { this._set('.index', JSON.stringify(this._index().filter(function (d) { return d.id !== id; }))); } catch (e) { /* full */ }
+    if (id === this.id) { this.id = null; this.rev = 0; this.last = null; this._tab(null); }
   };
 
   /* Everything this app keeps in the browser, gone. */
@@ -2842,6 +2950,8 @@ window.WB = window.WB || {};
       keys.forEach(function (k) { localStorage.removeItem(k); });
     } catch (e) { /* blocked */ }
     this.id = null;
+    this.rev = 0;
+    this.last = null;
     this._tab(null);
   };
 

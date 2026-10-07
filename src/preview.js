@@ -375,7 +375,7 @@ window.KC = window.KC || {};
     var el = this.el(b.key), isText = b.key.indexOf('text') === 0;
     var w = isText ? b.w - 6 : b.w, h = isText ? b.h - 4 : b.h;
     var al = el && isText ? el.align : 'center';
-    var off = al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
+    var off = al === 'left' ? w / 2 : al === 'right' ? -w / 2 : 0;      // from the anchor to the ink's middle
     var c = Math.cos(b.rot), sn = Math.sin(b.rot);
     var ex = b.round ? w / 2 : (Math.abs(c) * w + Math.abs(sn) * h) / 2;
     var ey = b.round ? w / 2 : (Math.abs(sn) * w + Math.abs(c) * h) / 2;

@@ -296,3 +296,11 @@ body.scrubbing, body.scrubbing *{cursor:ew-resize !important; user-select:none}
   .panes{flex-direction:column}
   .pane + .pane{border-left:none; border-top:1px solid var(--line)}
 }
+
+/* reset-to-defaults button in a panel heading */
+.panel > h2{position:relative}
+.panel-reset{margin-left:auto; background:none; border:1px solid transparent; color:var(--ink3); font-size:13px; line-height:1;
+  padding:2px 6px; border-radius:6px; cursor:pointer; opacity:0; transition:opacity .12s}
+.panel:hover .panel-reset, .panel-reset:focus-visible{opacity:1}
+.panel-reset:hover{color:var(--ink); border-color:var(--line2); background:var(--bg)}
+@media (hover: none){ .panel-reset{opacity:1} }

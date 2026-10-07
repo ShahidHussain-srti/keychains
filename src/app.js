@@ -316,6 +316,33 @@
     });
   }
 
+  /* ── reset a section ────────────────────────────────────────────────
+     Every setting the panel shows goes back to its default; what you typed
+     or uploaded is kept. */
+  var KEEP = /^~t\.content$|^~a\.(source|id)$|^name$/;
+  function defaultFor(path) {
+    if (path.indexOf('~t.') === 0) return WB.get(KC.newText(), path.slice(3));
+    if (path.indexOf('~a.') === 0) return WB.get(KC.newArt(), path.slice(3));
+    return WB.get(KC.defaults(), P(path));
+  }
+  function resetPanel(panel) {
+    var paths = WB.panelPaths(panel).filter(function (p) { return !KEEP.test(p) && WB.get(state, P(p)) !== undefined; });
+    var changed = paths.filter(function (p) {
+      var d = defaultFor(p);
+      return d !== undefined && JSON.stringify(d) !== JSON.stringify(WB.get(state, P(p)));
+    });
+    if (!changed.length) return;
+    beginEdit(0);
+    changed.forEach(function (p) {
+      var d = defaultFor(p);
+      WB.set(state, P(p), d && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d);
+    });
+    preview.invalidateBorder();
+    refresh();
+    paintSide();
+    apply();
+  }
+
   function syncSeg(el, path) {
     var v = String(WB.get(state, P(path)));
     $$('button', el).forEach(function (b) { b.classList.toggle('on', b.value === v); });
@@ -1066,6 +1093,7 @@
     enhanceNumbers();
     bind();
     bindHistory();
+    WB.addResetButtons($$('.sidebar .panel'), resetPanel);
     bindSides();
     bindLists();
     chrome();

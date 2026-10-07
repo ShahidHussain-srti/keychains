@@ -2124,6 +2124,34 @@ window.WB = window.WB || {};
     }
   };
 
+  /* ── reset a sidebar section ───────────────────────────────────────
+     Puts a small ↺ in each panel's heading. onReset(panel) does the work;
+     the button doesn't open or close the panel. */
+  WB.addResetButtons = function (panels, onReset) {
+    Array.prototype.forEach.call(panels, function (panel) {
+      var h = panel.querySelector('h2');
+      if (!h || h.querySelector('.panel-reset')) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'panel-reset';
+      b.textContent = '↺';
+      b.title = 'Reset this section to its defaults';
+      b.setAttribute('aria-label', 'Reset ' + h.textContent.trim() + ' to defaults');
+      b.addEventListener('click', function (e) { e.stopPropagation(); onReset(panel); });
+      h.appendChild(b);
+    });
+  };
+
+  /* The bound settings in a panel, as paths: data-bind and data-numfor. */
+  WB.panelPaths = function (panel) {
+    var seen = {}, out = [];
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-bind],[data-numfor]'), function (el) {
+      var p = el.dataset.bind || el.dataset.numfor;
+      if (p && !seen[p]) { seen[p] = true; out.push(p); }
+    });
+    return out;
+  };
+
   /* ── warnings strip ─────────────────────────────────────────────────
      show(list) replaces the build warnings ({level: 'bad'|'warn'|'ok', msg}),
      which happens on every rebuild. notice(level, msg) adds a line that stays

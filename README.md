@@ -34,7 +34,8 @@ own. Click text, a picture or the hole in the layout to select it, then drag it 
 it with the arrow keys. Every slider has a number box next to it: type an exact value, or
 drag sideways on the label or the edge of the box (Shift for bigger steps, Alt for finer).
 
-`⌘Z` / `Ctrl+Z` undoes anything, and your work survives a refresh. **Save** and **Load**
+Each section of the sidebar has a ↺ button that puts its settings back to their defaults,
+keeping your names, sizes, text and pictures. `⌘Z` / `Ctrl+Z` undoes anything, and your work survives a refresh. **Save** and **Load**
 keep a design as a `.keychain.json` file.
 
 **Share** copies a link that opens your design for whoever you send it to. The design is

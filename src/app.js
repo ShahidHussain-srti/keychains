@@ -185,6 +185,7 @@
   /* Load a design as one undo step. Loading can wait on pictures, so the step
      stays open until it is in. */
   function loadAsStep(payload, after) {
+    if (undoHistory) undoHistory.commit();             // close any edit still pending first
     beginEdit(600000);
     loadPayload(payload, function () { after(); if (undoHistory) undoHistory.commit(); });
   }
@@ -894,7 +895,9 @@
 
   /* Opens a design from the link, if it carries one. Returns whether it does;
      done() runs once the design is in place. */
-  function openSharedLink(done) {
+  /* inTab: a link pasted into an open tab; if it fails, the design on screen
+     stays as it is rather than falling back to the saved session. */
+  function openSharedLink(done, inTab) {
     if (location.hash.indexOf('#d=') !== 0) return false;
     WB.shareDecode(location.hash).then(function (p) {
       history.replaceState(null, '', WB.shareBase());   // later refreshes use the session
@@ -910,7 +913,7 @@
       history.replaceState(null, '', WB.shareBase());
       WB.sharePopup({ kind: 'warn', title: 'That link could not be opened',
         body: ['It looks damaged or cut short. Ask for it again, or for the design file.'] });
-      if (!restoreSession(done)) done();
+      if (inTab || !restoreSession(done)) done();
     });
     return true;
   }
@@ -1117,8 +1120,9 @@
     // A link pasted into a tab that already has the app open.
     window.addEventListener('hashchange', function () {
       if (location.hash.indexOf('#d=') !== 0) return;
+      if (undoHistory) undoHistory.commit();           // close any edit still pending first
       beginEdit(600000);
-      openSharedLink(function () { afterLoad(); if (undoHistory) undoHistory.commit(); });
+      openSharedLink(function () { afterLoad(); if (undoHistory) undoHistory.commit(); }, true);
     });
     var restoring = openSharedLink(afterLoad) ||
       restoreSession(function (note) {

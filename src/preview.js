@@ -233,6 +233,7 @@ window.KC = window.KC || {};
     ctx.restore();
 
     this._handles(ctx, t);
+    this._guides(ctx, t, W, H);
     this._dims(ctx, t, W, H);
     this._sideBadge(ctx, W);
   };
@@ -358,6 +359,56 @@ window.KC = window.KC || {};
                  w: L.width + 6, h: L.height + 4, rot: -tx.rotation * Math.PI / 180 });
     });
     return out;
+  };
+
+  /* A hit box's footprint on the plate, axis-aligned, in mm (y up). Text
+     boxes lose their pick padding, so edges line up with the ink. */
+  Preview.prototype.footprint = function (b, t) {
+    var el = this.el(b.key), isText = b.key.indexOf('text') === 0;
+    var w = isText ? b.w - 6 : b.w, h = isText ? b.h - 4 : b.h;
+    var al = el && isText ? el.align : 'center';
+    var off = al !== 'center' ? (al === 'left' ? b.w / 2 : -b.w / 2) : 0;
+    var c = Math.cos(b.rot), sn = Math.sin(b.rot);
+    var ex = b.round ? w / 2 : (Math.abs(c) * w + Math.abs(sn) * h) / 2;
+    var ey = b.round ? w / 2 : (Math.abs(sn) * w + Math.abs(c) * h) / 2;
+    var cx = (b.cx + off * c - t.ox) / t.s, cy = (t.oy - b.cy - off * sn) / t.s;
+    return { x0: cx - ex / t.s, x1: cx + ex / t.s, y0: cy - ey / t.s, y1: cy + ey / t.s };
+  };
+
+  /* What a dragged element can line up with: the plate's edges and centre
+     lines, the inside of its border, and the edges and centres of everything else on this face. */
+  Preview.prototype.snapLines = function (t, key) {
+    var sz = KC.plateSize(this.state), self = this;
+    var lines = { x: [-sz.w / 2, 0, sz.w / 2], y: [-sz.h / 2, 0, sz.h / 2] };
+    var side = this.state.sides[this.state.activeSide], br = side.enabled ? WB.borderReach(side.border) : 0;
+    if (br > 0) {                                           // the inside of the border
+      var fo = KC.plateSize(this.state);
+      if (br < Math.min(fo.w, fo.h) / 2) {
+        lines.x.push(-fo.w / 2 + br, fo.w / 2 - br);
+        lines.y.push(-fo.h / 2 + br, fo.h / 2 - br);
+      }
+    }
+    this.boxes(t).forEach(function (b) {
+      if (b.key === key) return;
+      var f = self.footprint(b, t);
+      lines.x.push(f.x0, (f.x0 + f.x1) / 2, f.x1);
+      lines.y.push(f.y0, (f.y0 + f.y1) / 2, f.y1);
+    });
+    return lines;
+  };
+
+  Preview.prototype._guides = function (ctx, t, W, H) {
+    var g = this.drag && this.drag.guides;
+    if (!g || (!g.x.length && !g.y.length)) return;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,92,170,0.9)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    g.x.forEach(function (v) { var X = Math.round(t.ox + v * t.s) + 0.5; ctx.moveTo(X, 0); ctx.lineTo(X, H); });
+    g.y.forEach(function (v) { var Y = Math.round(t.oy - v * t.s) + 0.5; ctx.moveTo(0, Y); ctx.lineTo(W, Y); });
+    ctx.stroke();
+    ctx.restore();
   };
 
   /* Straight from the shared layout, so the box hugs the same ink the mesh is
@@ -580,12 +631,25 @@ window.KC = window.KC || {};
       var el = self.el(self.drag.key);
       var nx = self.drag.sx * ((p.x - t.ox) / t.s + self.drag.dx);
       var ny = -(p.y - t.oy) / t.s + self.drag.dy;
-      if (!e.altKey) {                        // snap to the centre lines
-        if (Math.abs(nx) < 0.6) nx = 0;
-        if (Math.abs(ny) < 0.6) ny = 0;
+      var sx = self.drag.sx, cur = self.boxes(t).filter(function (q) { return q.key === self.drag.key; })[0];
+      self.drag.guides = null;
+      if (!e.altKey && cur) {
+        // Line its edges or centre up with the plate and the other elements
+        // (Alt: place freely).
+        var lines = self.snapLines(t, self.drag.key), f = self.footprint(cur, t);
+        var mx = sx * (nx - el.x), my = ny - el.y;
+        var moved = { x0: f.x0 + mx, x1: f.x1 + mx, y0: f.y0 + my, y1: f.y1 + my };
+        var sn = WB.snapBox(moved, lines, 6 / t.s);
+        nx = sn.x ? WB.tidy(nx + sx * sn.dx) : Math.round(nx * 20) / 20;
+        ny = sn.y ? WB.tidy(ny + sn.dy) : Math.round(ny * 20) / 20;
+        var at = { x0: f.x0 + sx * (nx - el.x), x1: f.x1 + sx * (nx - el.x), y0: f.y0 + ny - el.y, y1: f.y1 + ny - el.y };
+        self.drag.guides = WB.boxGuides(at, lines);
+      } else {
+        nx = Math.round(nx * 20) / 20;
+        ny = Math.round(ny * 20) / 20;
       }
-      el.x = Math.round(nx * 20) / 20;
-      el.y = Math.round(ny * 20) / 20;
+      el.x = nx;
+      el.y = ny;
       canvas.style.cursor = 'grabbing';
       self.draw();
       self.onChange(true);

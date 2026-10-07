@@ -26,6 +26,42 @@ window.WB = window.WB || {};
   WB.clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
   WB.lerp = function (a, b, t) { return a + (b - a) * t; };
 
+  /* ── snapping a dragged box to its neighbours ───────────────────── */
+  /* lines: { x: [...], y: [...] }, the positions a box's edges or centre can
+     land on; an entry { v, centre: true } takes the centre only. Returns the
+     shift that lands the nearest of the box's edges or centre on a line
+     within tol, per axis, and whether that axis snapped. */
+  function snapAxis(a0, a1, list, tol) {
+    var best = null, own = [a0, (a0 + a1) / 2, a1];
+    (list || []).forEach(function (l) {
+      var v = typeof l === 'number' ? l : l.v;
+      own.forEach(function (o, i) {
+        if (typeof l !== 'number' && l.centre && i !== 1) return;
+        var d = v - o;
+        if (Math.abs(d) <= tol && (best === null || Math.abs(d) < Math.abs(best))) best = d;
+      });
+    });
+    return best;
+  }
+  WB.snapBox = function (box, lines, tol) {
+    var hx = snapAxis(box.x0, box.x1, lines.x, tol), hy = snapAxis(box.y0, box.y1, lines.y, tol);
+    return { dx: hx || 0, dy: hy || 0, x: hx !== null, y: hy !== null };
+  };
+  /* The lines a box's edges or centre sit on, to draw as guides. */
+  WB.boxGuides = function (box, lines, eps) {
+    eps = eps || 1e-3;
+    var pick = function (a0, a1, list) {
+      var out = [];
+      (list || []).forEach(function (l) {
+        var v = typeof l === 'number' ? l : l.v, c = typeof l !== 'number' && l.centre;
+        var hit = Math.abs(v - (a0 + a1) / 2) <= eps || (!c && (Math.abs(v - a0) <= eps || Math.abs(v - a1) <= eps));
+        if (hit && !out.some(function (o) { return Math.abs(o - v) <= eps; })) out.push(v);
+      });
+      return out;
+    };
+    return { x: pick(box.x0, box.x1, lines.x), y: pick(box.y0, box.y1, lines.y) };
+  };
+
   WB.get = function (obj, path) {
     return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, obj);
   };
@@ -1165,6 +1201,20 @@ window.WB = window.WB || {};
 
     return WB.mask.sealEdges(WB.mask.fromCanvas(o.canvas), g);
   }
+
+  /* How far in from the plate's edge the border's ink reaches, mm: what an
+     element dragged inside it lines up with. */
+  WB.borderReach = function (b) {
+    if (!b || b.style === 'none') return 0;
+    if (!STROKED[b.style]) {
+      return Math.max.apply(null, bandsFor(b).map(function (k) { return k[1]; }));
+    }
+    var amp = WAVY[b.style] ? Math.max(0.2, b.gap) : 0;
+    var centre = b.inset + (b.shape === 'follow' ? b.width / 2 + amp : 0);
+    var half = b.style === 'ticks' ? Math.max(b.width, b.gap * 1.2) / 2
+             : b.style === 'beads' ? b.width * 0.85 : b.width / 2 + amp;
+    return centre + half;
+  };
 
   WB.borderMask = function (b, fo, g, plate) {
     if (b.style === 'none') return null;

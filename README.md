@@ -31,7 +31,8 @@ and double-click `index.html`. It works offline too: the geometry engine
 
 The layout and the 3D preview sit side by side, or you can switch to either one on its
 own. Click text, a picture or the hole in the layout to select it, then drag it or nudge
-it with the arrow keys. Every slider has a number box next to it: type an exact value, or
+it with the arrow keys. While dragging, its edges and centre snap to the plate's edges and
+centre lines, the inside of the border and the other elements, with a guide line (hold Alt to place freely). Every slider has a number box next to it: type an exact value, or
 drag sideways on the label or the edge of the box (Shift for bigger steps, Alt for finer).
 
 Each section of the sidebar has a ↺ button that puts its settings back to their defaults,

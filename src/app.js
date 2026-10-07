@@ -173,6 +173,7 @@
     KC.assets.customShape = snap.assets.customShape;
     KC.assets.images = Object.assign({}, snap.assets.images);
     KC.assets.drawings = Object.assign({}, snap.assets.drawings);
+    preview.drag = preview.resize = null;
     preview.invalidateBorder();
     refresh();
     apply();
@@ -856,6 +857,7 @@
   function afterLoad() {
     preview.state = state;
     preview.selected = null;
+    preview.drag = preview.resize = null;     // a drag in progress belonged to the old design
     preview.invalidateBorder();
     refresh();
     paintSide();
@@ -899,6 +901,8 @@
      stays as it is rather than falling back to the saved session. */
   function openSharedLink(done, inTab) {
     if (location.hash.indexOf('#d=') !== 0) return false;
+    // Only a link that won't decode counts as damaged; a problem after it has
+    // loaded is not the link's fault and must not load a second time.
     WB.shareDecode(location.hash).then(function (p) {
       history.replaceState(null, '', WB.shareBase());   // later refreshes use the session
       loadPayload(p, function () {
@@ -909,7 +913,7 @@
                ' that links cannot carry. Ask the sender for the design file to get ' + (n === 1 ? 'it' : 'them') + '.' }]
           : ['Changes you make stay in your own copy.'] });
       });
-    }).catch(function () {
+    }, function () {
       history.replaceState(null, '', WB.shareBase());
       WB.sharePopup({ kind: 'warn', title: 'That link could not be opened',
         body: ['It looks damaged or cut short. Ask for it again, or for the design file.'] });
@@ -967,8 +971,8 @@
 
     /* A face used to hold exactly one text and one picture. */
     ['front', 'back'].forEach(function (w) {
-      var f = ps.sides[w];
-      if (!f) return;
+      var f = ps.sides && ps.sides[w];
+      if (!f || typeof f !== 'object') return;
       if (!f.texts) {
         f.texts = [];
         if (f.text) {
@@ -991,6 +995,9 @@
         }
         delete f.art;
       }
+      // Drop anything that isn't a text or picture a broken link might carry.
+      f.texts = (Array.isArray(f.texts) ? f.texts : []).filter(function (t) { return t && typeof t === 'object'; });
+      f.arts = (Array.isArray(f.arts) ? f.arts : []).filter(function (a) { return a && typeof a === 'object'; });
       f.texts.forEach(function (t) { t.font = WB.fontKey(t.font); });
       if (f.border && f.border.color === undefined) {
         f.border.color = hex(ps.colors && ps.colors.border, '#16181d');
@@ -1020,9 +1027,12 @@
         } else if (sameKind(dst[k], src[k])) { dst[k] = src[k]; }
       });
     })(d, ps);
+    if (d.activeSide !== 'front' && d.activeSide !== 'back') d.activeSide = 'front';
     ['front', 'back'].forEach(function (w) {
-      if (ps.sides && ps.sides[w] && ps.sides[w].texts) d.sides[w].texts = ps.sides[w].texts;
-      if (ps.sides && ps.sides[w] && ps.sides[w].arts) d.sides[w].arts = ps.sides[w].arts;
+      // Each text and picture filled out over its defaults, so a partial one still works.
+      var isObj = function (o) { return !!o && typeof o === 'object' && !Array.isArray(o); };
+      if (ps.sides && ps.sides[w] && Array.isArray(ps.sides[w].texts)) d.sides[w].texts = ps.sides[w].texts.filter(isObj).map(function (t) { return KC.newText(t); });
+      if (ps.sides && ps.sides[w] && Array.isArray(ps.sides[w].arts)) d.sides[w].arts = ps.sides[w].arts.filter(isObj).map(function (a) { return KC.newArt(a); });
       d.sides[w].texts.forEach(function (t) { if (!t.id) t.id = WB.newId('t'); });
       d.sides[w].arts.forEach(function (a) { if (!a.id) a.id = WB.newId('a'); });
       d.sides[w].textIdx = WB.clamp(d.sides[w].textIdx || 0, 0,

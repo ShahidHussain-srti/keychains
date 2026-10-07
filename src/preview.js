@@ -162,7 +162,18 @@ window.KC = window.KC || {};
       var dFace = state.sides[decorSide];
       KC.faceItems(dFace).forEach(function (e) {
         if (e.kind === 'border') {
-          this._border(feat.g, t, W, H, fs);
+          // The border follows the plate, so it has to end up flipped exactly
+          // when the plate on screen is: draw it pre-flipped when the
+          // decoration's own flip and the plate's disagree.
+          if (back === mirrorDecor) { this._border(feat.g, t, W, H, fs); return; }
+          var bl = layer('prevborder');
+          this._border(bl.g, t, W, H, fs);
+          feat.g.save();
+          feat.g.setTransform(1, 0, 0, 1, 0, 0);
+          feat.g.translate(px, 0);
+          feat.g.scale(-1, 1);
+          feat.g.drawImage(bl.c, 0, 0);
+          feat.g.restore();
           return;
         }
         if (e.kind === 'text') {

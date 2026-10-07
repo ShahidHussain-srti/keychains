@@ -182,6 +182,12 @@
   var undoHistory = null;           // set up in init(), once the buttons exist
   /* Call immediately BEFORE changing the design. */
   function beginEdit(coalesceMs) { if (undoHistory) undoHistory.begin(coalesceMs); }
+  /* Load a design as one undo step. Loading can wait on pictures, so the step
+     stays open until it is in. */
+  function loadAsStep(payload, after) {
+    beginEdit(600000);
+    loadPayload(payload, function () { after(); if (undoHistory) undoHistory.commit(); });
+  }
 
 
 
@@ -319,7 +325,9 @@
   /* ── reset a section ────────────────────────────────────────────────
      Every setting the panel shows goes back to its default; what you typed
      or uploaded is kept. */
-  var KEEP = /^~t\.content$|^~a\.(source|id)$|^name$/;
+  // activeSide only says which face the panel edits; resetting it would send
+  // the rest of the reset to the other face.
+  var KEEP = /^~t\.content$|^~a\.(source|id)$|^name$|^activeSide$/;
   function defaultFor(path) {
     if (path.indexOf('~t.') === 0) return WB.get(KC.newText(), path.slice(3));
     if (path.indexOf('~a.') === 0) return WB.get(KC.newArt(), path.slice(3));
@@ -821,10 +829,7 @@
       var fr = new FileReader();
       fr.onload = function () {
         try {
-          loadPayload(JSON.parse(fr.result), function () {
-            beginEdit(0);
-            afterLoad();
-          });
+          loadAsStep(JSON.parse(fr.result), afterLoad);
         } catch (err) {
           showWarnings([{ level: 'bad', msg: 'That file could not be loaded: ' + err.message }]);
         }
@@ -994,13 +999,22 @@
 
     /* Merge onto defaults, replacing arrays outright rather than blending. */
     var d = KC.defaults();
+    // A saved or shared value only replaces a default of the same kind, so a
+    // damaged link can't leave, say, text where a number belongs.
+    var sameKind = function (a, b) {
+      if (a === null || a === undefined) return true;
+      if (typeof a === 'number') return typeof b === 'number' && isFinite(b);
+      if (Array.isArray(a)) return Array.isArray(b);
+      if (typeof a === 'object') return !!b && typeof b === 'object' && !Array.isArray(b);
+      return typeof a === typeof b;
+    };
     (function merge(dst, src) {
       Object.keys(dst).forEach(function (k) {
         if (src[k] === undefined) return;
         if (dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k]) &&
             src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) {
           merge(dst[k], src[k]);
-        } else { dst[k] = src[k]; }
+        } else if (sameKind(dst[k], src[k])) { dst[k] = src[k]; }
       });
     })(d, ps);
     ['front', 'back'].forEach(function (w) {
@@ -1100,6 +1114,12 @@
     assets();
     exports_();
 
+    // A link pasted into a tab that already has the app open.
+    window.addEventListener('hashchange', function () {
+      if (location.hash.indexOf('#d=') !== 0) return;
+      beginEdit(600000);
+      openSharedLink(function () { afterLoad(); if (undoHistory) undoHistory.commit(); });
+    });
     var restoring = openSharedLink(afterLoad) ||
       restoreSession(function (note) {
         afterLoad();

@@ -46,7 +46,9 @@ window.KC = window.KC || {};
       else if (e.kind === 'text') m = WB.textMask(e.item, g);
       else m = WB.artMask(e.item, g);
       if (!m) return;
-      if (mirror) m = WB.mirrorMaskX(m, g);
+      // Text and pictures read the right way round from the back; the border
+      // follows the plate's own outline, which is not mirrored.
+      if (mirror && e.kind !== 'border') m = WB.mirrorMaskX(m, g);
       out.raw.push({ kind: e.kind, index: e.index, mask: m });
       out.list.push({ kind: e.kind, index: e.index, item: e.item,
                       color: e.item.color, mask: WB.mask.and(m, plateSolid) });

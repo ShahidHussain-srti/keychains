@@ -2299,7 +2299,7 @@ window.WB = window.WB || {};
         if (inTextEntry()) return;
         e.preventDefault(); self.undo();
       } else if ((k === 'z' && e.shiftKey) || k === 'y') {
-        if (inTextEntry() && k === 'z') return;
+        if (inTextEntry()) return;
         e.preventDefault(); self.redo();
       }
     });
@@ -2539,6 +2539,28 @@ window.WB = window.WB || {};
     this.dist = 160;
     this.pan = [0, 0];
 
+    this.atlasTex = {};
+    this._initGL();
+    this._bindControls();
+
+    // A lost context (GPU reset, too many tabs) comes back empty: rebuild the
+    // programs and buffers and upload the model again.
+    var self = this;
+    canvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); });
+    canvas.addEventListener('webglcontextrestored', function () {
+      var srcs = {};
+      Object.keys(self.atlasTex).forEach(function (k) { if (self.atlasTex[k]) srcs[k] = self.atlasTex[k].src; });
+      self.atlasTex = {};
+      self._initGL();
+      self._setAtlases(srcs);
+      self._upload();
+      self._uploadLines();
+      self.draw();
+    });
+  };
+
+  WB.Viewer.prototype._initGL = function () {
+    var gl = this.gl;
     this.prog = program(gl, VS, FS);
     this.loc = {
       pos: gl.getAttribLocation(this.prog, 'aPos'),
@@ -2559,7 +2581,6 @@ window.WB = window.WB || {};
     };
     // Float atlases when the GPU filters them, else 8-bit with a scale.
     this.floatTex = !!(gl.getExtension('OES_texture_float') && gl.getExtension('OES_texture_float_linear'));
-    this.atlasTex = {};
     this.lprog = program(gl, LVS, LFS);
     this.lloc = {
       pos: gl.getAttribLocation(this.lprog, 'aPos'),
@@ -2573,8 +2594,6 @@ window.WB = window.WB || {};
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
-
-    this._bindControls();
   };
 
   WB.Viewer.prototype._bindControls = function () {
@@ -2619,7 +2638,7 @@ window.WB = window.WB || {};
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
       self.fitted = false;
-      self.dist = WB.clamp(self.dist * Math.exp(e.deltaY * 0.0012), self.radius * 0.55, self.radius * 14);
+      self.dist = WB.clamp(self.dist * Math.exp(e.deltaY * 0.0012), self.radius * 0.55, Math.max(self.radius * 14, self.dist));
       self.draw();
     }, { passive: false });
     canvas.addEventListener('dblclick', function () { self.frame(); self.draw(); });

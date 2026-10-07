@@ -843,15 +843,60 @@
     $('#btn-reset').addEventListener('click', function () {
       if (!window.confirm('Discard this design and start from the defaults?')) return;
       beginEdit(0);
-      var d = KC.defaults();
-      Object.keys(state).forEach(function (k) { if (!(k in d)) delete state[k]; });
-      Object.keys(d).forEach(function (k) { state[k] = d[k]; });
-      KC.assets.customShape = null;
-      KC.assets.images = {};
-      KC.assets.drawings = {};
+      var name = state.name;
+      toDefaults();
+      state.name = name;                    // still the same design, by the same name
       clearSession();
       afterLoad();
     });
+
+    $('#btn-designs').addEventListener('click', function (e) {
+      WB.designsMenu({ anchor: e.currentTarget, session: session, open: openDesign, create: newDesign,
+                       duplicate: duplicateDesign, wipe: wipeDesigns });
+    });
+  }
+
+  function toDefaults() {
+    var d = KC.defaults();
+    Object.keys(state).forEach(function (k) { if (!(k in d)) delete state[k]; });
+    Object.keys(d).forEach(function (k) { state[k] = d[k]; });
+    KC.assets.customShape = null;
+    KC.assets.images = {};
+    KC.assets.drawings = {};
+  }
+
+  /* ── designs kept in this browser (WB.Session) ── */
+  function openDesign(id) {
+    session.open(id, function (note) {
+      afterLoad();
+      if (undoHistory) undoHistory.clear();   // undo stays with the design it was made in
+      if (note) notice('warn', note);
+    });
+  }
+  function newDesign() {
+    session.saveNow();
+    toDefaults();
+    state.name = session.uniqueName(KC.defaults().name);
+    afterLoad();
+    if (undoHistory) undoHistory.clear();
+    session.startNew();
+    setTimeout(function () { session.settled(); }, 0);
+  }
+  function duplicateDesign() {
+    session.duplicate();
+    state.name = session.uniqueName(state.name + ' copy');
+    refresh();
+    persist();
+    notice('ok', 'You are now working on "' + state.name + '", a copy; the original is kept as it was.');
+  }
+  function wipeDesigns() {
+    session.wipe();
+    toDefaults();
+    afterLoad();
+    if (undoHistory) undoHistory.clear();
+    session.startNew();
+    setTimeout(function () { session.settled(); }, 0);
+    notice('ok', 'Every design this app kept in this browser has been deleted.');
   }
 
   function afterLoad() {
@@ -874,7 +919,17 @@
   function plural(n, one, many) { return n === 1 ? one : n + ' ' + many; }
   function shareLink() {
     var pics = pictureCount(), btn = $('#btn-share');
-    var payload = { version: 2, state: JSON.parse(JSON.stringify(state)), assets: {} };
+    // Only the changes from the defaults travel, which keeps links short.
+    var full = JSON.parse(JSON.stringify(state)), base = JSON.parse(JSON.stringify(KC.defaults()));
+    // Texts and pictures keep only what differs from a fresh one; loading
+    // fills the rest back in.
+    ['front', 'back'].forEach(function (w) {
+      var f = full.sides && full.sides[w];
+      if (!f) return;
+      f.texts = (f.texts || []).map(function (t) { return WB.shareTrim(t, KC.newText(), ['id']); });
+      f.arts = (f.arts || []).map(function (a) { return WB.shareTrim(a, KC.newArt(), ['id']); });
+    });
+    var payload = { version: 2, diff: 1, state: WB.shareDiff(base, full) || {} };
     if (pics) payload.picturesLeftOut = pics;
     WB.shareEncode(payload).then(function (hash) {
       var url = WB.shareBase() + hash;
@@ -904,6 +959,11 @@
     // Only a link that won't decode counts as damaged; a problem after it has
     // loaded is not the link's fault and must not load a second time.
     WB.shareDecode(location.hash).then(function (p) {
+      if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('not a design');
+      // A short link holds only the changes from the defaults.
+      if (p.diff) p.state = WB.sharePatch(JSON.parse(JSON.stringify(KC.defaults())), p.state || {});
+      return p;
+    }).then(function (p) {
       history.replaceState(null, '', WB.shareBase());   // later refreshes use the session
       loadPayload(p, function () {
         done();
@@ -1121,6 +1181,7 @@
     bind();
     bindHistory();
     WB.addResetButtons($$('.sidebar .panel'), resetPanel);
+    WB.addCollapseAll($('#sidebar'));
     bindSides();
     bindLists();
     chrome();
@@ -1158,6 +1219,7 @@
 
     paintSide();
     if (!restoring) apply();
+    session.settled();
     loadEngine();
   }
 

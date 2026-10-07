@@ -1760,6 +1760,9 @@ window.WB = window.WB || {};
  *
  *   #d=1.<base64url of deflate-raw JSON>   (browsers with CompressionStream)
  *   #d=0.<base64url of UTF-8 JSON>         (fallback, longer)
+ *
+ * Apps put only the changes from their defaults in the JSON (shareDiff), so a
+ * link grows with what was changed, not with every setting there is.
  */
 window.WB = window.WB || {};
 (function (WB) {
@@ -1804,6 +1807,52 @@ window.WB = window.WB || {};
       if (!canZip) throw new Error('this browser cannot unpack compressed links');
       return pipe(bytes, new DecompressionStream('deflate-raw'));
     }).then(function (bytes) { return JSON.parse(new TextDecoder().decode(bytes)); });
+  };
+
+  /* Links carry only what differs from the app's defaults; opening one lays
+     those changes back over the defaults. Objects compare key by key; arrays
+     and plain values are kept whole when they differ. Numbers are rounded to
+     4 decimals, which is far below print resolution. */
+  var tidy4 = function (v) { return typeof v === 'number' ? Math.round(v * 1e4) / 1e4 : v; };
+  var plain = function (v) { return v && typeof v === 'object' && !Array.isArray(v); };
+  var round = function (v) {
+    if (Array.isArray(v)) return v.map(round);
+    if (plain(v)) { var o = {}; Object.keys(v).forEach(function (k) { o[k] = round(v[k]); }); return o; }
+    return tidy4(v);
+  };
+  WB.shareDiff = function (base, obj) {
+    if (plain(base) && plain(obj)) {
+      var out = {}, any = false;
+      Object.keys(obj).forEach(function (k) {
+        var d = WB.shareDiff(base[k], obj[k]);
+        if (d !== undefined) { out[k] = d; any = true; }
+      });
+      return any ? out : undefined;
+    }
+    var r = round(obj);
+    return JSON.stringify(r) === JSON.stringify(round(base)) ? undefined : r;
+  };
+  /* An item in a list (a text, a compartment) as only what differs from a
+     fresh one, without the keys in `drop`; the app's loader fills the rest
+     back in from a fresh one. */
+  WB.shareTrim = function (o, fresh, drop) {
+    var out = {};
+    Object.keys(o).forEach(function (k) {
+      if (drop && drop.indexOf(k) >= 0) return;
+      if (JSON.stringify(round(o[k])) !== JSON.stringify(round(fresh[k]))) out[k] = o[k];
+    });
+    return out;
+  };
+  WB.sharePatch = function (base, diff) {
+    if (diff === undefined) return base;
+    if (!plain(base) || !plain(diff)) return diff;
+    var out = {};
+    Object.keys(base).forEach(function (k) { out[k] = base[k]; });
+    Object.keys(diff).forEach(function (k) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
+      out[k] = WB.sharePatch(base[k], diff[k]);
+    });
+    return out;
   };
 
   WB.shareBase = function () { return location.href.split('#')[0]; };
@@ -2102,7 +2151,8 @@ window.WB = window.WB || {};
  *   WB.scrubbable(input, label)   number fields you can drag, as in Unity
  *   WB.Warnings(box)              the warnings strip, with dismissible notices
  *   WB.History(opts)              undo / redo with coalesced bursts
- *   WB.Session(opts)              the design kept in localStorage across refreshes
+ *   WB.Session(opts)              designs kept in localStorage, one per tab
+ *   WB.designsMenu(opts)          the list of them, to open, start, copy or delete
  */
 window.WB = window.WB || {};
 (function (WB) {
@@ -2190,6 +2240,36 @@ window.WB = window.WB || {};
       b.addEventListener('click', function (e) { e.stopPropagation(); onReset(panel); });
       h.appendChild(b);
     });
+  };
+
+  /* A bar pinned to the top of the sidebar with one button that folds every
+     section shut, or opens them all again when they are all shut. */
+  WB.addCollapseAll = function (sidebar) {
+    if (!sidebar || sidebar.querySelector('.sidebar-tools')) return;
+    var bar = document.createElement('div');
+    bar.className = 'sidebar-tools';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost';
+    bar.appendChild(b);
+    sidebar.insertBefore(bar, sidebar.firstChild);
+    var panels = function () { return sidebar.querySelectorAll('.panel'); };
+    var allShut = function () { return ![].some.call(panels(), function (p) { return p.classList.contains('open'); }); };
+    var paint = function () {
+      var shut = allShut();
+      b.textContent = shut ? '▾ Expand all' : '▴ Collapse all';
+      b.title = shut ? 'Open every section' : 'Fold every section shut';
+    };
+    b.addEventListener('click', function () {
+      var open = allShut();
+      [].forEach.call(panels(), function (p) { p.classList.toggle('open', open); });
+      paint();
+    });
+    // A section opened or shut any other way changes what the button offers.
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(paint).observe(sidebar, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+    paint();
   };
 
   /* The bound settings in a panel, as paths: data-bind and data-numfor. */
@@ -2319,6 +2399,14 @@ window.WB = window.WB || {};
     this.opts.restore(this.redoStack.pop());
     this.paint();
   };
+  /* Forget every step, when a different design comes on screen. */
+  WB.History.prototype.clear = function () {
+    clearTimeout(this.timer);
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+    this.pending = null;
+    this.paint();
+  };
   WB.History.prototype.paint = function () {
     var u = this.opts.undoButton, r = this.opts.redoButton;
     if (!u || !r) return;
@@ -2356,13 +2444,26 @@ window.WB = window.WB || {};
     this.paint();
   };
 
-  /* ── session ────────────────────────────────────────────────────────
-     The design survives a refresh via localStorage. Pictures are stored too,
-     but dropped rather than losing the design if the quota is hit.
+  /* ── designs kept in the browser ───────────────────────────────────
+     Every design lives under its own key in localStorage, with an index of
+     them all, so one browser can hold many. Each tab remembers (in
+     sessionStorage, which a refresh keeps) which design it has open, and
+     marks it as open with a heartbeat, so two tabs never write over the same
+     design: a tab that finds its design open elsewhere (a duplicated tab)
+     carries on in a copy, and a new tab picks up the latest design nobody
+     has open. Pictures are stored too, but dropped rather than losing the
+     design if the quota is hit. Nothing leaves the browser.
 
-     opts: { key, build() → payload, load(payload, done) } */
+     opts: { key, build() → payload, load(payload, done) }
+     A payload's state.name is the name the design is listed under. */
+  var BEAT = 2500, STALE = 7000;
+  var tabToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
   WB.Session = function (opts) {
     this.opts = opts;
+    this.id = null;
+    this.baseline = null;
+    var self = this;
     this.ok = (function () {
       try {
         localStorage.setItem(opts.key + '.probe', '1');
@@ -2370,43 +2471,319 @@ window.WB = window.WB || {};
         return true;
       } catch (e) { return false; }
     })();
-    var self = this;
     this.save = WB.debounce(function () { self.saveNow(); }, 900);
-  };
-  WB.Session.prototype.saveNow = function () {
     if (!this.ok) return;
-    var payload = this.opts.build();
+    this._migrate();
+    setInterval(function () { self._claim(); }, BEAT);
+    // Let go on the way out, so a refresh can pick the same design up again.
+    window.addEventListener('pagehide', function () { self.saveNow(); self._release(); });
+  };
+  var S = WB.Session.prototype;
+
+  S._get = function (k) { try { return localStorage.getItem(this.opts.key + k); } catch (e) { return null; } };
+  S._set = function (k, v) { localStorage.setItem(this.opts.key + k, v); };
+  S._del = function (k) { try { localStorage.removeItem(this.opts.key + k); } catch (e) { /* gone already */ } };
+  S._index = function () {
     try {
-      localStorage.setItem(this.opts.key, JSON.stringify(payload));
+      var l = JSON.parse(this._get('.index') || '[]');
+      return Array.isArray(l) ? l.filter(function (d) { return d && typeof d.id === 'string'; }) : [];
+    } catch (e) { return []; }
+  };
+  S._writeIndex = function (l) { try { this._set('.index', JSON.stringify(l)); } catch (e) { /* keep going */ } };
+  S._tab = function (v) {
+    var k = this.opts.key + '.tab';
+    try { if (v === undefined) return sessionStorage.getItem(k); if (v) sessionStorage.setItem(k, v); else sessionStorage.removeItem(k); }
+    catch (e) { return null; }
+    return null;
+  };
+
+  /* The single design kept before there could be many becomes the first. */
+  S._migrate = function () {
+    var old = this._get('');
+    if (!old) return;
+    var id = WB.newId('d'), name = 'Design';
+    try { name = (JSON.parse(old).state || {}).name || name; } catch (e) { /* unnamed */ }
+    try {
+      this._set('.d.' + id, old);
+      var l = this._index(); l.push({ id: id, name: String(name), t: Date.now() }); this._writeIndex(l);
+      this._del('');
+    } catch (e) { /* leave it where it is */ }
+  };
+
+  /* Is this design open in another live tab? */
+  S.openElsewhere = function (id) {
+    try {
+      var m = JSON.parse(this._get('.open.' + id) || 'null');
+      return !!m && m.tab !== tabToken && Date.now() - m.t < STALE;
+    } catch (e) { return false; }
+  };
+  S._claim = function () {
+    if (!this.id) return;
+    try { this._set('.open.' + this.id, JSON.stringify({ tab: tabToken, t: Date.now() })); } catch (e) { /* full */ }
+  };
+  S._release = function () {
+    if (!this.id) return;
+    try {
+      var m = JSON.parse(this._get('.open.' + this.id) || 'null');
+      if (m && m.tab === tabToken) this._del('.open.' + this.id);
+    } catch (e) { /* nothing held */ }
+  };
+  S._use = function (id) {
+    this._release();
+    this.id = id;
+    this._tab(id);
+    this._claim();
+  };
+
+  /* The designs, newest first: { id, name, t, here, elsewhere }. */
+  S.list = function () {
+    var self = this;
+    return this._index().sort(function (a, b) { return b.t - a.t; }).map(function (d) {
+      return { id: d.id, name: d.name || 'Untitled', t: d.t, here: d.id === self.id, elsewhere: self.openElsewhere(d.id) };
+    });
+  };
+
+  /* A name not already in the list: "case", then "case 2", "case 3"… */
+  S.uniqueName = function (base) {
+    var self = this, names = this._index().filter(function (d) { return d.id !== self.id; }).map(function (d) { return d.name; });
+    if (names.indexOf(base) < 0) return base;
+    for (var i = 2; ; i++) if (names.indexOf(base + ' ' + i) < 0) return base + ' ' + i;
+  };
+
+  S.saveNow = function () {
+    if (!this.ok) return;
+    var payload = this.opts.build(), json = JSON.stringify(payload);
+    // A new design isn't kept until something in it changes, so opening
+    // tabs doesn't fill the list with copies of the defaults.
+    if (this.baseline !== null) {
+      if (json === this.baseline) return;
+      this.baseline = null;
+    }
+    if (!this.id) this._use(WB.newId('d'));
+    try {
+      this._set('.d.' + this.id, json);
     } catch (e) {
       try {                                   // over quota: keep the design at least
         payload.assets = {};
         payload.assetsDropped = true;
-        localStorage.setItem(this.opts.key, JSON.stringify(payload));
-      } catch (e2) { /* give up quietly; the design is still on screen */ }
+        this._set('.d.' + this.id, JSON.stringify(payload));
+      } catch (e2) { return; }                // give up quietly; the design is still on screen
     }
+    var l = this._index(), id = this.id, name = String((payload.state && payload.state.name) || 'Untitled');
+    l = l.filter(function (d) { return d.id !== id; });
+    l.push({ id: id, name: name, t: Date.now() });
+    this._writeIndex(l);
   };
-  WB.Session.prototype.clear = function () {
-    if (!this.ok) return;
-    try { localStorage.removeItem(this.opts.key); } catch (e) { /* nothing to undo */ }
+
+  /* Forget what is stored for the open design (it is saved again on the next
+     change, under the same id). */
+  S.clear = function () {
+    if (!this.ok || !this.id) return;
+    this._del('.d.' + this.id);
   };
-  /* Returns true when a stored design is being restored; done(note) runs once
-     it is in place, with a note to show if its pictures had to be dropped. */
-  WB.Session.prototype.restore = function (done) {
+
+  S._read = function (id) {
+    try { return JSON.parse(this._get('.d.' + id) || 'null'); } catch (e) { return null; }
+  };
+  S._load = function (p, done) {
+    this.opts.load(p, function () {
+      done(p.assetsDropped ? 'Opened your design, but its pictures were too large to keep in this browser.' : null);
+    });
+  };
+
+  /* At start-up: this tab's design, or the latest one no other tab has open.
+     Returns true when one is being opened; done(note) runs once it is in.
+     Otherwise the app starts a new design. */
+  S.restore = function (done) {
     if (!this.ok) return false;
-    var raw;
-    try { raw = localStorage.getItem(this.opts.key); } catch (e) { return false; }
-    if (!raw) return false;
-    try {
-      var p = JSON.parse(raw);
-      this.opts.load(p, function () {
-        done(p.assetsDropped ? 'Restored your last session, but the pictures were too large to keep.' : null);
-      });
+    var mine = this._tab(), p = mine && this._read(mine);
+    if (p) {
+      if (this.openElsewhere(mine)) {        // a duplicated tab: carry on in a copy
+        this._use(WB.newId('d'));
+        this.baseline = null;
+        if (p.state) p.state.name = this.uniqueName(String(p.state.name || 'Untitled'));
+      } else {
+        this._use(mine);
+      }
+      this._load(p, done);
       return true;
-    } catch (e) {
-      this.clear();
-      return false;
     }
+    // A new tab carries on with the latest design, unless another tab has it.
+    var latest = this.list()[0], free = latest && !latest.elsewhere ? latest : null;
+    var fp = free && this._read(free.id);
+    if (fp) { this._use(free.id); this._load(fp, done); return true; }
+    this.startNew();
+    return false;
+  };
+
+  /* From here on the tab works on a new design, kept once it changes. Call
+     with the new design already on screen (or about to be, with no change). */
+  S.startNew = function () {
+    this._release();
+    this.id = null;
+    this._tab(null);
+    this.baseline = this.ok ? JSON.stringify(this.opts.build()) : null;
+  };
+
+  /* Call once start-up has filled in whatever it fills in, so a new design
+     that nobody has touched still counts as untouched. */
+  S.settled = function () {
+    if (this.ok && !this.id && this.baseline !== null) this.baseline = JSON.stringify(this.opts.build());
+  };
+
+  /* Open a stored design in this tab, after saving the one on screen. */
+  S.open = function (id, done) {
+    var p = this._read(id);
+    if (!p) return false;
+    this.saveNow();
+    this.baseline = null;
+    this._use(id);
+    this._load(p, done || function () {});
+    return true;
+  };
+
+  /* Keep working on a copy of the design on screen; the original stays. */
+  S.duplicate = function () {
+    this.saveNow();
+    this._release();
+    this.id = null;
+    this._tab(null);
+    this.baseline = null;
+  };
+
+  /* ── the Designs menu ──────────────────────────────────────────────
+     opts: { anchor, session, open(id), create(), duplicate(), wipe() }.
+     Lists what this browser keeps; the design in this tab is marked, and one
+     open in another tab can't be opened here as well. */
+  var menu = null;
+  function closeMenu() {
+    if (!menu) return;
+    var el = menu; menu = null;
+    el.classList.remove('in');
+    setTimeout(function () { el.remove(); }, 160);
+  }
+  function ago(t) {
+    var s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return new Date(t).toLocaleDateString();
+  }
+  WB.designsMenu = function (opts) {
+    if (menu) { closeMenu(); return; }
+    var ses = opts.session, el = document.createElement('div');
+    el.className = 'sharepop designs';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Designs in this browser');
+    var head = document.createElement('div');
+    head.className = 'sp-head';
+    head.innerHTML = '<b>Designs in this browser</b><button type="button" class="sp-x" aria-label="Close">✕</button>';
+    head.lastChild.addEventListener('click', closeMenu);
+    el.appendChild(head);
+
+    var list = document.createElement('div');
+    list.className = 'ds-list';
+    var rows = ses.ok ? ses.list() : [];
+    if (!rows.some(function (d) { return d.here; })) {
+      rows.unshift({ id: null, name: 'This design', here: true, unsaved: true });
+    }
+    rows.forEach(function (d) {
+      var row = document.createElement('div');
+      row.className = 'ds-row' + (d.here ? ' here' : '') + (d.elsewhere ? ' busy' : '');
+      var pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'ds-pick';
+      var nm = document.createElement('span'); nm.className = 'ds-name'; nm.textContent = d.name;
+      var meta = document.createElement('span'); meta.className = 'ds-meta';
+      meta.textContent = d.here ? (d.unsaved ? 'this tab · not changed yet' : 'this tab · ' + ago(d.t))
+                       : d.elsewhere ? 'open in another tab' : ago(d.t);
+      pick.appendChild(nm); pick.appendChild(meta);
+      pick.disabled = d.here || d.elsewhere;
+      pick.title = d.here ? 'Open in this tab' : d.elsewhere ? 'Open in another tab; switch to that tab to edit it' : 'Open this design here';
+      pick.addEventListener('click', function () { closeMenu(); opts.open(d.id); });
+      row.appendChild(pick);
+      if (!d.here && d.id) {
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'ds-del';
+        del.textContent = '✕';
+        del.title = 'Delete this design';
+        del.setAttribute('aria-label', 'Delete ' + d.name);
+        del.disabled = d.elsewhere;
+        del.addEventListener('click', function () {
+          if (!window.confirm('Delete "' + d.name + '" from this browser? This can\'t be undone.')) return;
+          ses.remove(d.id);
+          row.remove();
+        });
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    });
+    el.appendChild(list);
+
+    var acts = document.createElement('div');
+    acts.className = 'ds-acts';
+    [['New design', 'Start a new design; this one stays in the list', function () { opts.create(); }],
+     ['Duplicate', 'Carry on in a copy of this design; the original stays as it is', function () { opts.duplicate(); }]]
+      .forEach(function (a) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.textContent = a[0]; b.title = a[1];
+        b.disabled = !ses.ok;
+        b.addEventListener('click', function () { closeMenu(); a[2](); });
+        acts.appendChild(b);
+      });
+    el.appendChild(acts);
+
+    var foot = document.createElement('p');
+    foot.className = 'sp-body ds-foot';
+    foot.textContent = ses.ok ? 'Designs are kept in this browser only, never sent anywhere. ' : 'This browser blocks storage here, so designs are not kept. ';
+    if (ses.ok) {
+      var wipe = document.createElement('button');
+      wipe.type = 'button'; wipe.className = 'linkish'; wipe.textContent = 'Delete all saved data';
+      wipe.addEventListener('click', function () {
+        if (!window.confirm('Delete every design this app has kept in this browser? Designs open in other tabs stay on their screens until closed. This can\'t be undone.')) return;
+        closeMenu();
+        opts.wipe();
+      });
+      foot.appendChild(wipe);
+    }
+    el.appendChild(foot);
+
+    document.body.appendChild(el);
+    var a = opts.anchor && opts.anchor.getBoundingClientRect();
+    if (a) {
+      el.style.top = (a.bottom + 8) + 'px';
+      el.style.right = Math.max(8, window.innerWidth - a.right) + 'px';
+    } else el.classList.add('centred');
+    requestAnimationFrame(function () { el.classList.add('in'); });
+    menu = el;
+  };
+  if (typeof document !== 'undefined') {
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenu(); });
+    document.addEventListener('pointerdown', function (e) {
+      if (menu && !menu.contains(e.target) && !e.target.closest('#btn-designs')) closeMenu();
+    });
+  }
+
+  S.remove = function (id) {
+    this._del('.d.' + id);
+    this._del('.open.' + id);
+    this._writeIndex(this._index().filter(function (d) { return d.id !== id; }));
+    if (id === this.id) { this.id = null; this._tab(null); }
+  };
+
+  /* Everything this app keeps in the browser, gone. */
+  S.wipe = function () {
+    var pre = this.opts.key, keys = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k === pre || k.indexOf(pre + '.') === 0) keys.push(k);
+      }
+      keys.forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) { /* blocked */ }
+    this.id = null;
+    this._tab(null);
   };
 
 })(window.WB);
@@ -2582,6 +2959,7 @@ window.WB = window.WB || {};
     this.parts = [];
     this.poser = null;
     this.lines = null;
+    this.bed = null;
 
     // camera state
     this.az = this.view0.az;
@@ -2605,6 +2983,7 @@ window.WB = window.WB || {};
       self._setAtlases(srcs);
       self._upload();
       self._uploadLines();
+      self._uploadBed();
       self.draw();
     });
   };
@@ -2640,6 +3019,7 @@ window.WB = window.WB || {};
     };
     this.buf = gl.createBuffer();
     this.lbuf = gl.createBuffer();
+    this.bbuf = gl.createBuffer();
 
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
@@ -2648,10 +3028,12 @@ window.WB = window.WB || {};
 
   WB.Viewer.prototype._bindControls = function () {
     var self = this, canvas = this.canvas;
-    var down = false, lastX = 0, lastY = 0, shift = false, travel = 0;
+    var down = false, lastX = 0, lastY = 0, shift = false, travel = 0, button = 0;
 
+    // Right-drag pans, so the browser's menu must not open at the end of it.
+    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     canvas.addEventListener('pointerdown', function (e) {
-      down = true; shift = e.shiftKey; travel = 0;
+      down = true; shift = e.shiftKey; travel = 0; button = e.button;
       lastX = e.clientX; lastY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
       canvas.classList.add('dragging');
@@ -2661,7 +3043,7 @@ window.WB = window.WB || {};
       var dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
       travel += Math.abs(dx) + Math.abs(dy);
-      if (shift || e.buttons === 4) {
+      if (shift || button === 1 || button === 2) {           // shift, middle or right: pan
         var k = self.dist * 0.0016;
         var c = Math.cos(self.az), s = Math.sin(self.az);
         self.fitted = false;
@@ -2676,7 +3058,7 @@ window.WB = window.WB || {};
       self.draw();
     });
     var end = function (e) {
-      if (down && travel < 4 && e.type === 'pointerup') { var ray = self.ray(e); if (ray) self.onClick(ray, e); }
+      if (down && travel < 4 && e.type === 'pointerup' && button === 0) { var ray = self.ray(e); if (ray) self.onClick(ray, e); }
       down = false;
       canvas.classList.remove('dragging');
       if (e.pointerId != null && canvas.hasPointerCapture(e.pointerId)) {
@@ -2723,6 +3105,46 @@ window.WB = window.WB || {};
   WB.Viewer.prototype.setLines = function (pts) {
     this.lines = pts && pts.length ? pts : null;
     this._uploadLines();
+  };
+
+  /* A print bed drawn under the model: { w, d, cx, cy, z } in mm, or null.
+     A faint plate with a 10 mm grid, darker every 50 mm, measured from its
+     centre, and a firm outline. */
+  WB.Viewer.prototype.setBed = function (b) {
+    var was = this.bed;
+    this.bed = b && b.w > 0 && b.d > 0 ? b : null;
+    this._uploadBed();
+    // Zoom to suit when it appears, changes size or goes away.
+    if (this.bed ? (!was || was.w !== this.bed.w || was.d !== this.bed.d) : was) this.fit();
+  };
+  WB.Viewer.prototype._uploadBed = function () {
+    if (this.failed) return;
+    this.bedRanges = null;
+    var b = this.bed;
+    if (!b) return;
+    var x0 = b.cx - b.w / 2, x1 = b.cx + b.w / 2, y0 = b.cy - b.d / 2, y1 = b.cy + b.d / 2;
+    var zp = b.z - 0.06, zl = b.z - 0.03, v = [];
+    v.push(x0, y0, zp, x1, y0, zp, x1, y1, zp, x0, y0, zp, x1, y1, zp, x0, y1, zp);
+    var grid = function (major) {
+      var n0 = v.length;
+      for (var k = -Math.floor(b.w / 20); k <= Math.floor(b.w / 20); k++) {
+        var x = b.cx + k * 10;
+        if ((k % 5 === 0) !== major || x <= x0 + 1e-6 || x >= x1 - 1e-6) continue;
+        v.push(x, y0, zl, x, y1, zl);
+      }
+      for (var j = -Math.floor(b.d / 20); j <= Math.floor(b.d / 20); j++) {
+        var y = b.cy + j * 10;
+        if ((j % 5 === 0) !== major || y <= y0 + 1e-6 || y >= y1 - 1e-6) continue;
+        v.push(x0, y, zl, x1, y, zl);
+      }
+      return (v.length - n0) / 3;
+    };
+    var minor = grid(false), major = grid(true);
+    v.push(x0, y0, zl, x1, y0, zl, x1, y0, zl, x1, y1, zl, x1, y1, zl, x0, y1, zl, x0, y1, zl, x0, y0, zl);
+    var gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.bbuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
+    this.bedRanges = { plate: [0, 6], minor: [6, minor], major: [6 + minor, major], edge: [6 + minor + major, 8] };
   };
 
   /* One GPU texture per atlas, re-uploaded only when the atlas itself changed
@@ -2831,7 +3253,8 @@ window.WB = window.WB || {};
   /* Fit the bounding sphere in whichever field of view is narrower. */
   WB.Viewer.prototype.fit = function () {
     var aspect = Math.max(0.2, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
-    this.dist = this.radius / Math.sin(0.31) / Math.min(1, aspect) * 1.02;
+    var r = this.bed ? Math.max(this.radius, Math.hypot(this.bed.w, this.bed.d) / 2 * 0.95) : this.radius;
+    this.dist = r / Math.sin(0.31) / Math.min(1, aspect) * 1.02;
     this.pan = [0, 0];
     this._framed = this.radius;
     this.fitted = true;      // keeps refitting as the canvas resizes, until you zoom or pan
@@ -2869,9 +3292,16 @@ window.WB = window.WB || {};
     // Clip planes hug the model: a tight depth range keeps a 1 mm lid top from
     // flickering against the lettering on its far side.
     var reach = this.radius * 1.6 + Math.hypot(this.pan[0], this.pan[1]);
+    if (this.bedRanges) {                     // keep the whole bed inside the depth range
+      var bd = this.bed;
+      reach = Math.max(reach, Math.hypot(Math.abs(bd.cx - target[0]) + bd.w / 2, Math.abs(bd.cy - target[1]) + bd.d / 2,
+                                         bd.z - target[2]) + 5);
+    }
     var proj = perspective(0.62, w / h, Math.max(this.radius * 0.02, this.dist - reach), this.dist + reach);
     var view = lookAt(eye, target, [0, 0, 1]);
     this._mats = { proj: proj, view: view };
+
+    if (this.bedRanges) this._drawBed(proj, view);
 
     gl.useProgram(this.prog);
     gl.uniformMatrix4fv(this.loc.proj, false, proj);
@@ -2926,6 +3356,35 @@ window.WB = window.WB || {};
       gl.depthFunc(gl.LESS);
       gl.disableVertexAttribArray(this.lloc.pos);
     }
+  };
+
+  /* Under everything and translucent, so it reads on light and dark pages
+     and never hides the model; it writes no depth, so the model always draws
+     over it. */
+  WB.Viewer.prototype._drawBed = function (proj, view) {
+    var gl = this.gl, R = this.bedRanges;
+    gl.useProgram(this.lprog);
+    gl.uniformMatrix4fv(this.lloc.proj, false, proj);
+    gl.uniformMatrix4fv(this.lloc.view, false, view);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.bbuf);
+    gl.enableVertexAttribArray(this.lloc.pos);
+    gl.vertexAttribPointer(this.lloc.pos, 3, gl.FLOAT, false, 12, 0);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.disable(gl.CULL_FACE);
+    gl.depthMask(false);
+    gl.uniform4f(this.lloc.color, 0.52, 0.58, 0.66, 0.30);
+    gl.drawArrays(gl.TRIANGLES, R.plate[0], R.plate[1]);
+    gl.uniform4f(this.lloc.color, 0.60, 0.66, 0.74, 0.40);
+    if (R.minor[1]) gl.drawArrays(gl.LINES, R.minor[0], R.minor[1]);
+    gl.uniform4f(this.lloc.color, 0.60, 0.66, 0.74, 0.70);
+    if (R.major[1]) gl.drawArrays(gl.LINES, R.major[0], R.major[1]);
+    gl.uniform4f(this.lloc.color, 0.52, 0.58, 0.66, 0.9);
+    gl.drawArrays(gl.LINES, R.edge[0], R.edge[1]);
+    gl.depthMask(true);
+    gl.enable(gl.CULL_FACE);
+    gl.disable(gl.BLEND);
+    gl.disableVertexAttribArray(this.lloc.pos);
   };
 
   /* ── shading ────────────────────────────────────────────────────── */

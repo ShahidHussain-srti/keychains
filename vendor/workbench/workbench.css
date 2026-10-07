@@ -85,6 +85,10 @@ textarea{resize:vertical; font-size:13px}
   border-right:1px solid var(--line); padding-bottom:40px;
   scrollbar-width:thin;
 }
+.sidebar-tools{position:sticky; top:0; z-index:3; display:flex; justify-content:flex-end; padding:5px 8px;
+  background:var(--bg2); border-bottom:1px solid var(--line)}
+.sidebar-tools button{padding:3px 8px; font-size:11px; border-color:transparent}
+.sidebar-tools button:hover{border-color:var(--line2)}
 .sidebar::-webkit-scrollbar{width:9px}
 .sidebar::-webkit-scrollbar-thumb{background:var(--line2); border-radius:9px; border:2px solid var(--bg2)}
 .panel{border-bottom:1px solid var(--line)}
@@ -264,6 +268,22 @@ button.danger:disabled{color:var(--bad)}
 .sp-link button{flex:none; padding:5px 10px; font-size:11.5px}
 .sp-body{margin:8px 0 0; line-height:1.45}
 .sp-body.warn{color:var(--ink); padding:7px 9px; border-radius:7px; background:rgba(230,180,80,.1); border:1px solid rgba(230,180,80,.35)}
+.sharepop.designs{width:min(400px, calc(100vw - 16px))}
+.ds-list{margin-top:8px; max-height:min(52vh, 420px); overflow-y:auto; display:flex; flex-direction:column; gap:3px}
+.ds-row{display:flex; align-items:stretch; gap:4px}
+.ds-pick{flex:1; min-width:0; display:flex; justify-content:space-between; align-items:baseline; gap:10px; text-align:left;
+  background:var(--bg); border:1px solid var(--line2); border-radius:7px; padding:7px 9px}
+.ds-pick:disabled{opacity:1; cursor:default}
+.ds-row.here .ds-pick{border-color:var(--acc2)}
+.ds-row.busy .ds-pick{opacity:.6}
+.ds-name{color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.ds-meta{color:var(--ink3); font-size:11px; white-space:nowrap; flex:none}
+.ds-del{flex:none; width:30px; padding:0; background:none; color:var(--ink3)}
+.ds-del:hover{color:var(--bad, #e66); border-color:var(--bad, #e66)}
+.ds-acts{display:flex; gap:6px; margin-top:10px}
+.ds-acts button{flex:1}
+.ds-foot{color:var(--ink3)}
+button.linkish{background:none; border:0; padding:0; color:var(--acc); text-decoration:underline; cursor:pointer; font-size:inherit}
 button.flash{border-color:var(--ok) !important; color:var(--ok) !important}
 /* number boxes beside sliders, drag to change */
 .row.num{display:grid; grid-template-columns:1fr 84px; column-gap:10px; row-gap:3px; align-items:center}

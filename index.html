@@ -4,6 +4,8 @@
      Licensed under the GNU General Public License v3.0 or later; see LICENSE. -->
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keychain Studio — design multi-colour 3D-printed keychains</title>
 <meta name="description" content="Free browser app for designing 3D-printable keychains with text, borders and pictures. Exports multi-colour 3MF files with colours pre-assigned for Bambu Studio, OrcaSlicer and PrusaSlicer.">
@@ -366,6 +368,16 @@
     <p class="legal">Keychain Studio · © 2026 shahidhussain2k13@gmail.com · free software under the
       <a href="LICENSE" target="_blank" rel="noopener">GNU GPL v3 or later</a>.
       Bundles <a href="vendor/workbench/LICENSE-manifold.txt" target="_blank" rel="noopener">Manifold</a> (Apache-2.0).</p>
+    <details class="privacy">
+      <summary>Privacy</summary>
+      <p>No accounts, cookies, analytics or trackers, and the page loads nothing from other sites. Your designs and
+        pictures stay in this browser (its local storage), and leave it only as files you save or export yourself.</p>
+      <p>A share link carries the design after the <code>#</code>, which browsers never send to the server, so it goes
+        only where you send it — and anyone you send it to can read it. Pictures are never put in links.</p>
+      <p>The site is hosted on GitHub Pages; GitHub keeps standard request logs (such as IP addresses) under
+        <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener noreferrer">its privacy statement</a>.
+        To delete everything kept here: Designs → Delete all saved data, or clear this site's data in your browser.</p>
+    </details>
   </aside>
 
   <!-- ─────────────────────────── viewport ─────────────────────────── -->

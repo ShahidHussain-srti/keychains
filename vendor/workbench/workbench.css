@@ -284,6 +284,10 @@ button.danger:disabled{color:var(--bad)}
 .ds-acts button{flex:1}
 .ds-foot{color:var(--ink3)}
 button.linkish{background:none; border:0; padding:0; color:var(--acc); text-decoration:underline; cursor:pointer; font-size:inherit}
+.privacy{margin:0 14px 14px; font-size:11px; color:var(--ink3)}
+.privacy summary{cursor:pointer; color:var(--ink2)}
+.privacy p{margin:6px 0 0; line-height:1.45}
+.privacy code{font-family:var(--mono)}
 button.flash{border-color:var(--ok) !important; color:var(--ok) !important}
 /* number boxes beside sliders, drag to change */
 .row.num{display:grid; grid-template-columns:1fr 84px; column-gap:10px; row-gap:3px; align-items:center}

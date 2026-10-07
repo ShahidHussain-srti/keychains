@@ -26,6 +26,57 @@ window.WB = window.WB || {};
   WB.clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
   WB.lerp = function (a, b, t) { return a + (b - a) * t; };
 
+  /* ── checking what a file, a link or storage hands back ─────────────
+     A design can come from anyone (a shared link, a file), so before it is
+     used: colours must be plain hex colours (they end up in CSS, where
+     anything else could fetch from elsewhere), pictures must be inline image
+     data (so loading one never contacts another site), and numbers stay
+     inside the limits their fields allow. */
+  var HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+  WB.isColour = function (v) { return typeof v === 'string' && HEX.test(v); };
+  WB.isImageData = function (v) {
+    return typeof v === 'string' && /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/.test(v);
+  };
+  /* Every string under a key that names a colour (color, colour, base/lid
+     inside `colors`, …) that isn't a hex colour goes back to the default at
+     the same place, or a neutral grey. */
+  WB.cleanColours = function (obj, defaults) {
+    (function walk(o, d, inColours) {
+      if (!o || typeof o !== 'object') return;
+      Object.keys(o).forEach(function (k) {
+        var v = o[k], dv = d && typeof d === 'object' ? d[k] : undefined;
+        var named = /colou?rs?$/i.test(k) || inColours;
+        if (typeof v === 'string' && named && !WB.isColour(v)) o[k] = WB.isColour(dv) ? dv : '#808080';
+        else if (v && typeof v === 'object') walk(v, Array.isArray(v) ? null : dv, /^colou?rs$|^palette$/i.test(k));
+      });
+    })(obj, defaults, false);
+    return obj;
+  };
+  /* The limits of every bound number field: [{ path, min, max }], skipping
+     fields whose limits follow the design (data-range, or an id in `skip`);
+     the app keeps those in range itself. */
+  WB.fieldLimits = function (root, skip) {
+    var out = [], seen = {};
+    var sel = 'input[type=number][data-bind], input[type=range][data-bind], input[type=number][data-numfor]';
+    Array.prototype.forEach.call((root || document).querySelectorAll(sel), function (el) {
+      var p = el.dataset.bind || el.dataset.numfor;
+      if (seen[p] || el.dataset.range != null || (skip && skip.indexOf(el.id) >= 0) || el.min === '' || el.max === '') return;
+      var lo = parseFloat(el.min), hi = parseFloat(el.max), k = +el.dataset.scale || 1;
+      if (!isFinite(lo) || !isFinite(hi)) return;
+      seen[p] = true;
+      out.push({ path: p, min: lo / k, max: hi / k });
+    });
+    return out;
+  };
+  /* o[key] kept a finite number within [min, max]; anything else becomes
+     the fallback. Nulls (meaning "automatic") are left alone. */
+  WB.clampField = function (o, key, min, max, fallback) {
+    if (!o || typeof o !== 'object' || !(key in o) || o[key] === null) return;
+    var v = o[key];
+    if (typeof v !== 'number' || !isFinite(v)) { if (typeof fallback === 'number') o[key] = fallback; return; }
+    o[key] = v < min ? min : v > max ? max : v;
+  };
+
   /* ── snapping a dragged box to its neighbours ───────────────────── */
   /* lines: { x: [...], y: [...] }, the positions a box's edges or centre can
      land on; an entry { v, centre: true } takes the centre only. Returns the

@@ -992,6 +992,35 @@
     return payload;
   }
 
+  /* A setting path inside each object of a list kept within its field's
+     limits: 'pocket.corner' on every compartment, say. */
+  function clampAll(list, sub, L, fresh) {
+    var parts = sub.split('.'), key = parts.pop(), at = parts.join('.');
+    list.forEach(function (o) {
+      var tgt = at ? WB.get(o, at) : o;
+      WB.clampField(tgt, key, L.min, L.max, fresh ? WB.get(fresh, sub) : undefined);
+    });
+  }
+
+  /* A design from a file, a link or storage, kept to what the app can build:
+     hex colours only, every number inside its field's limits, and lists of a
+     sane length, so a crafted link can't hang the page (and stay saved). */
+  var MAX_ITEMS = 40;
+  function sanitize(d) {
+    WB.cleanColours(d, KC.defaults());
+    var sides = [d.sides.front, d.sides.back];
+    sides.forEach(function (f) { f.texts = f.texts.slice(0, MAX_ITEMS); f.arts = f.arts.slice(0, MAX_ITEMS); });
+    var texts = [].concat(sides[0].texts, sides[1].texts), arts = [].concat(sides[0].arts, sides[1].arts);
+    var fresh = KC.defaults();
+    WB.fieldLimits(document, ['f-t-x', 'f-t-y', 'f-a-x', 'f-a-y', 'f-hole-x', 'f-hole-y', 'f-shape-thickness', 'f-inlayDepth', 'f-reliefHeight']).forEach(function (L) {
+      var p = L.path;
+      if (p.indexOf('~t.') === 0) clampAll(texts, p.slice(3), L, KC.newText());
+      else if (p.indexOf('~a.') === 0) clampAll(arts, p.slice(3), L, KC.newArt());
+      else if (p.indexOf('~.') === 0) clampAll(sides, p.slice(2), L, fresh.sides.front);
+      else clampAll([d], p, L, fresh);
+    });
+  }
+
   function loadPayload(p, done) {
     var ps = p.state || {};
     var assets = p.assets || {};
@@ -1101,6 +1130,8 @@
                                    Math.max(0, d.sides[w].arts.length - 1));
     });
 
+    sanitize(d);
+
     Object.keys(state).forEach(function (k) { if (!(k in d)) delete state[k]; });
     Object.keys(d).forEach(function (k) { state[k] = d[k]; });
 
@@ -1127,6 +1158,7 @@
       }
     });
 
+    jobs = jobs.filter(function (j) { return WB.isImageData(j.data); });   // inline pictures only
     var pending = jobs.length;
     if (!pending) { done(); return; }
     jobs.forEach(function (job) {

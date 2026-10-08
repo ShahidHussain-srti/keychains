@@ -824,10 +824,11 @@
       var fr = new FileReader();
       fr.onload = function () {
         try {
+          var parsed = JSON.parse(fr.result);    // a broken file stops here, before anything changes
           session.duplicate();                 // a new design; the one on screen stays in the list
           // …so its undo history starts here; the old design is in Designs.
           if (undoHistory) undoHistory.clear();
-          loadPayload(JSON.parse(fr.result), function () { state.name = session.uniqueName(state.name); afterLoad(); });
+          loadPayload(parsed, function () { state.name = session.uniqueName(state.name); afterLoad(); });
         } catch (err) {
           showWarnings([{ level: 'bad', msg: 'That file could not be loaded: ' + err.message }]);
         }

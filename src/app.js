@@ -496,13 +496,26 @@
     if (viewer && !viewer.failed) {
       var first = !viewer.count;
       viewer.setModel(model.parts);
+      placeBed();
       if (first) viewer.frame();
       if (show3d()) viewer.draw();
     }
 
     stats(model, performance.now() - t0);
-    showWarnings(model.warnings);
+    showWarnings(model.warnings.concat(bedWarnings(model)));
   }, 220);
+
+  /* The print bed, when shown, sits under the keychain, centred on it. */
+  function placeBed() {
+    var b = state.bed, B = viewer.bounds;
+    viewer.setBed(b && b.show && B ? { w: b.w, d: b.d, cx: (B.minX + B.maxX) / 2, cy: (B.minY + B.maxY) / 2, z: B.minZ } : null);
+  }
+  function bedWarnings(model) {
+    if (!state.bed || !state.bed.show) return [];
+    var w = WB.bedWarning({ w: model.stats.w, d: model.stats.h }, state.bed, 'The keychain', 'Make it smaller.');
+    return w ? [w] : [];
+  }
+  var bedPicker = null;
 
   function stats(model, ms) {
     var s = model.stats;
@@ -529,9 +542,12 @@
     // Keep segmented toggles honest even if state changed without a refresh().
     // Safe to do on every pass: they are buttons, so there is no caret or
     // in-progress input to disturb.
+    // Checkboxes too: the bed has one in the sidebar and one above the 3D view.
     $$('[data-bind]').forEach(function (el) {
       if (el.classList.contains('seg')) syncSeg(el, el.dataset.bind);
+      else if (el.type === 'checkbox') { var v = WB.get(state, P(el.dataset.bind)); if (v !== undefined) el.checked = !!v; }
     });
+    if (bedPicker) bedPicker.paint(state.bed);
     paintColours();
     paintSide();
     // The preview and the mesh are independent; a hiccup in one must not stop
@@ -1229,8 +1245,14 @@
     try {
       viewer = new WB.Viewer($('#c3d'), { view: { az: -0.62, el: 0.78 } });
     } catch (e) {
-      viewer = { failed: true, setModel: function () {}, draw: function () {}, frame: function () {} };
+      viewer = { failed: true, setModel: function () {}, setBed: function () {}, draw: function () {}, frame: function () {} };
     }
+    bedPicker = WB.bedPicker($('#bed-preset'), function (w, d) {
+      if (w == null) { $('#f-bed-w').focus(); return; }
+      beginEdit(0);
+      state.bed.w = w; state.bed.d = d;
+      refresh(); apply();
+    });
 
     enhanceNumbers();
     bind();

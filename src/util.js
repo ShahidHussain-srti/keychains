@@ -51,6 +51,7 @@ window.KC = window.KC || {};
       shape:  { preset: 'rect', width: 58, height: 30, radius: 6, thickness: 3 },
       plateColor: '#e9edf2',
       layerHeight: 0.2,
+      bed:    { show: false, w: 256, d: 256 },   // print bed drawn under the 3D view, mm
       hole:   { enabled: true, diameter: 4, margin: 4, position: 'tl', x: 0, y: 0 },
       sides:  { front: KC.faceDefaults('front'), back: KC.faceDefaults('back') },
       activeSide: 'front',

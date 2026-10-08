@@ -69,8 +69,10 @@ part on extruder 1, whatever the file says. In **raised** mode each colour gets 
 band of layers, though, so a manual filament change works just as well, and the warnings
 strip tells you which layer to swap at.
 
-Set **layer height** to match your slicer. Every thickness is a whole number of layers, and
-at least three, so nothing ever asks for a partial layer.
+Under **Printer**, set the layer height to match your slicer. Every thickness is a whole
+number of layers, and at least three, so nothing ever asks for a partial layer. Pick your
+printer there (Bambu Lab, Prusa, Creality Hi, K1 and K2, Elegoo, Anycubic, or a custom size)
+to see its bed under the keychain in the 3D view and be warned if it doesn't fit.
 
 A few things worth knowing:
 

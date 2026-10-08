@@ -3007,6 +3007,57 @@ window.WB = window.WB || {};
     this._tab(null);
   };
 
+  /* ── printers ───────────────────────────────────────────────────────
+     Common printers by bed size (width × depth, mm). Printers that share a
+     bed share an entry, so each size names one choice. */
+  WB.PRINTERS = [
+    [256, 256, 'Bambu Lab X1 / P1 / A1'],
+    [180, 180, 'Bambu Lab A1 mini / Prusa MINI'],
+    [250, 210, 'Prusa MK3 / MK4'],
+    [250, 220, 'Prusa CORE One'],
+    [360, 360, 'Prusa XL'],
+    [260, 260, 'Creality Hi'],
+    [220, 220, 'Creality K1 / K1C / Ender-3'],
+    [300, 300, 'Creality K1 Max'],
+    [350, 350, 'Creality K2 Plus / large format'],
+    [225, 225, 'Elegoo Neptune 4'],
+    [250, 250, 'Anycubic Kobra 3']
+  ];
+  /* Fills a <select> with the printers and "Custom size". Choosing one calls
+     pick(w, d); choosing Custom calls pick(null). paint(bed) shows the entry
+     that matches a bed, or Custom. */
+  WB.bedPicker = function (sel, pick) {
+    sel.innerHTML = '';
+    WB.PRINTERS.concat([[0, 0, 'Custom size']]).forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p[0] ? p[0] + 'x' + p[1] : 'custom';
+      o.textContent = p[0] ? p[2] + ' — ' + p[0] + ' × ' + p[1] : p[2];
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () {
+      var m = /^(\d+)x(\d+)$/.exec(sel.value);
+      if (m) pick(+m[1], +m[2]); else pick(null);
+    });
+    return {
+      paint: function (b) {
+        if (!b) return;
+        var key = b.w + 'x' + b.d;
+        sel.value = [].some.call(sel.options, function (o) { return o.value === key; }) ? key : 'custom';
+      }
+    };
+  };
+  /* A warning when a footprint ({ w, d }, mm) is bigger than the bed, or null
+     when it fits. `what` names the print ("The print layout"); `advice` is
+     what to do when it doesn't fit even turned a quarter. */
+  WB.bedWarning = function (f, bed, what, advice) {
+    var e = 1e-6;
+    if (!bed || (f.w <= bed.w + e && f.d <= bed.d + e)) return null;
+    var size = f.w.toFixed(0) + ' × ' + f.d.toFixed(0) + ' mm', on = bed.w + ' × ' + bed.d + ' mm bed';
+    return f.d <= bed.w + e && f.w <= bed.d + e
+      ? { level: 'warn', msg: what + ' (' + size + ') fits the ' + on + ' only turned a quarter; turn it in your slicer.' }
+      : { level: 'warn', msg: what + ' (' + size + ') is bigger than the ' + on + '. ' + advice };
+  };
+
 })(window.WB);
 
 /* ── viewer.js ── */

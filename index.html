@@ -77,10 +77,34 @@
           <label for="f-shape-thickness">Thickness <b data-val="shape.thickness"></b></label>
           <input id="f-shape-thickness" type="range" data-bind="shape.thickness" min="0.6" max="5" step="0.1">
         </div>
+      </div>
+    </section>
+
+    <section class="panel" id="p-printer">
+      <h2>Printer</h2>
+      <div class="body">
         <div class="row">
           <label for="f-layerHeight">Layer height <b data-val="layerHeight"></b></label>
           <input id="f-layerHeight" type="range" data-bind="layerHeight" min="0.08" max="0.4" step="0.02">
         </div>
+        <p class="hint">Use the same layer height in your slicer. Raised and sunk details land on whole layers of it,
+          so nothing asks for a partial layer.</p>
+        <h3>Print bed</h3>
+        <div class="row">
+          <label for="bed-preset">Printer</label>
+          <select id="bed-preset" aria-label="Printer bed size"></select>
+        </div>
+        <div class="row">
+          <label for="f-bed-w">Bed width <b data-val="bed.w"></b></label>
+          <input id="f-bed-w" type="range" data-bind="bed.w" min="50" max="1000" step="1">
+        </div>
+        <div class="row">
+          <label for="f-bed-d">Bed depth <b data-val="bed.d"></b></label>
+          <input id="f-bed-d" type="range" data-bind="bed.d" min="50" max="1000" step="1">
+        </div>
+        <div class="row inlinerow"><label class="chk"><input type="checkbox" data-bind="bed.show"> Show the bed under the 3D view</label></div>
+        <p class="hint">Drawn under the keychain in the 3D view, with a 10 mm grid, and you are warned if the
+          keychain doesn't fit on it.</p>
       </div>
     </section>
 
@@ -402,6 +426,9 @@
         </div>
       </section>
       <section class="pane" id="pane-3d">
+        <div class="panebar">
+          <label class="chk inline" title="Show the print bed under the keychain"><input type="checkbox" data-bind="bed.show"> Bed</label>
+        </div>
         <div class="stage" id="stage3d">
           <canvas id="c3d"></canvas>
           <div class="hud" id="hud3d">drag to orbit · scroll to zoom · right- or shift-drag to pan</div>

@@ -332,3 +332,15 @@ body.scrubbing, body.scrubbing *{cursor:ew-resize !important; user-select:none}
 .panel:hover .panel-reset, .panel-reset:focus-visible{opacity:1}
 .panel-reset:hover{color:var(--ink); border-color:var(--line2); background:var(--bg)}
 @media (hover: none){ .panel-reset{opacity:1} }
+
+/* sub-headings inside a sidebar section */
+.panel h3{
+  margin:16px 0 9px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--ink3); display:flex; align-items:center; gap:8px;
+}
+.panel h3::after{content:""; flex:1; height:1px; background:var(--line)}
+/* a bar of view options above a pane */
+.panebar{
+  height:38px; flex:none; display:flex; align-items:center; gap:12px; padding:0 12px;
+  border-bottom:1px solid var(--line); background:var(--bg2);
+}

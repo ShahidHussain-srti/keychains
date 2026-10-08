@@ -1642,7 +1642,7 @@ window.WB = window.WB || {};
     xml.push('<basematerials id="' + MATGROUP + '">');
     slots.forEach(function (sl, i) {
       xml.push('<base name="Colour ' + (i + 1) + '" displaycolor="' +
-               sl.color.toUpperCase() + 'FF"/>');
+               esc(String(sl.color).toUpperCase()) + 'FF"/>');
     });
     xml.push('</basematerials>');
 

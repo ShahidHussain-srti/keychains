@@ -42,7 +42,9 @@ other; a new tab picks up your latest design unless another tab has it open.
 
 Each section of the sidebar has a ↺ button that puts its settings back to their defaults,
 keeping your names, sizes, text and pictures. `⌘Z` / `Ctrl+Z` undoes anything, and your work survives a refresh. **Save** and **Load**
-keep a design as a `.keychain.json` file.
+keep a design as a `.keychain.json` file. Loading a file, or opening a
+share link in a tab that already has a design, starts a new design; the one you had stays
+in Designs.
 
 **Share** copies a link that opens your design for whoever you send it to. The design is
 packed into the link itself, after the `#`, so nothing is uploaded anywhere. Pictures and

@@ -2516,6 +2516,32 @@ window.WB = window.WB || {};
     this.paint();
   };
 
+  /* A small picture of a canvas for the Designs list, as a data URL, or null
+     when the canvas isn't on screen. Transparent margins (round a 3D model)
+     are trimmed so the design fills the frame. */
+  WB.thumbnail = function (src, w, h) {
+    w = w || 132; h = h || 92;
+    if (!src || !src.width || !src.height || !src.clientWidth) return null;
+    try {
+      var k = Math.min(1, 360 / Math.max(src.width, src.height));
+      var a = document.createElement('canvas');
+      a.width = Math.max(1, Math.round(src.width * k)); a.height = Math.max(1, Math.round(src.height * k));
+      var ag = a.getContext('2d', { willReadFrequently: true });
+      ag.drawImage(src, 0, 0, a.width, a.height);
+      var px = ag.getImageData(0, 0, a.width, a.height).data, x0 = a.width, y0 = a.height, x1 = -1, y1 = -1;
+      for (var y = 0; y < a.height; y++) for (var x = 0; x < a.width; x++) {
+        if (px[(y * a.width + x) * 4 + 3] > 16) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      if (x1 < 0) return null;                              // nothing drawn yet
+      var pad = 4, bw = x1 - x0 + 1, bh = y1 - y0 + 1, s = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh);
+      var out = document.createElement('canvas');
+      out.width = w; out.height = h;
+      out.getContext('2d').drawImage(a, x0, y0, bw, bh, (w - bw * s) / 2, (h - bh * s) / 2, bw * s, bh * s);
+      var url = out.toDataURL('image/webp', 0.8);
+      return url.indexOf('data:image/webp') === 0 ? url : out.toDataURL('image/png');
+    } catch (e) { return null; }                            // a tainted or lost canvas
+  };
+
   /* ── designs kept in the browser ───────────────────────────────────
      Every design lives under its own key in localStorage, with an index of
      them all, so one browser can hold many. Each tab remembers (in
@@ -2533,7 +2559,9 @@ window.WB = window.WB || {};
      the quota is hit. Nothing leaves the browser.
 
      opts: { key, build() → payload, load(payload, done), rename(name)?,
-             failed(message)? }. A payload's state.name is its listed name. */
+             failed(message)?, thumb()? → data URL }. A payload's state.name
+     is its listed name; thumb() gives the picture shown beside it, taken at
+     most every few seconds while editing and always on the way out. */
   var BEAT = 2500, STALE = 7000;
   var tabToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
@@ -2560,7 +2588,7 @@ window.WB = window.WB || {};
     // Let go on the way out, so a refresh can pick the same design up again;
     // check again on the way back (a frozen or cached page may have been
     // thought gone).
-    window.addEventListener('pagehide', function () { self.saveNow(); self._release(); });
+    window.addEventListener('pagehide', function () { self.saveNow(true); self._release(); });
     window.addEventListener('pageshow', function () { self._claim(); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) self._claim(); });
     window.addEventListener('storage', function (e) { self._changed(e); });
@@ -2658,7 +2686,9 @@ window.WB = window.WB || {};
   S.list = function () {
     var self = this;
     return this._index().sort(function (a, b) { return b.t - a.t; }).map(function (d) {
-      return { id: d.id, name: d.name || 'Untitled', t: d.t, here: d.id === self.id, elsewhere: self.openElsewhere(d.id) };
+      var th = self._get('.t.' + d.id);
+      return { id: d.id, name: d.name || 'Untitled', t: d.t, here: d.id === self.id, elsewhere: self.openElsewhere(d.id),
+               thumb: WB.isImageData(th) ? th : null };
     });
   };
 
@@ -2670,10 +2700,13 @@ window.WB = window.WB || {};
     for (var i = 2; ; i++) if (names.indexOf(root + ' ' + i) < 0) return root + ' ' + i;
   };
 
-  S.saveNow = function () {
+  S.saveNow = function (leaving) {
     if (!this.ok || this.loading) return;
     var payload = this.opts.build(), json = JSON.stringify(payload);
-    if (json === this.last) return;                       // nothing changed since it was loaded or saved
+    if (json === this.last) {                             // nothing changed since it was loaded or saved
+      if (leaving && this.thumbStale) this._thumb();
+      return;
+    }
     // A new design isn't kept until something in it changes, so opening
     // tabs doesn't fill the list with copies of the defaults.
     if (this.baseline !== null) {
@@ -2723,6 +2756,14 @@ window.WB = window.WB || {};
     this.rev = rev;
     this.last = json;
     this.warned = false;
+    this.thumbStale = true;
+    if (leaving || Date.now() - (this.thumbAt || 0) > 4000) this._thumb();
+  };
+  S._thumb = function () {
+    if (!this.id || !this.opts.thumb) return;
+    var url = this.opts.thumb();
+    if (!WB.isImageData(url)) return;
+    try { this._set('.t.' + this.id, url); this.thumbAt = Date.now(); this.thumbStale = false; } catch (e) { /* no room: no picture */ }
   };
 
   /* Forget what is stored for the open design (it is saved again on the next
@@ -2796,7 +2837,7 @@ window.WB = window.WB || {};
   S.open = function (id, done) {
     var p = this._read(id), e = this._entry(id);
     if (!p) return false;
-    this.saveNow();
+    this.saveNow(true);
     this.baseline = null;
     this.forked = false;
     this._use(id, e ? e.rev || 0 : 0);
@@ -2808,7 +2849,7 @@ window.WB = window.WB || {};
      Also used before something from outside (a file, a link) replaces what
      is on screen, so the design it replaces stays in the list. */
   S.duplicate = function () {
-    this.saveNow();
+    this.saveNow(true);
     this._release();
     this.id = null;
     this.rev = 0;
@@ -2819,7 +2860,7 @@ window.WB = window.WB || {};
   };
 
   /* ── the Designs menu ──────────────────────────────────────────────
-     opts: { anchor, session, open(id), create(), duplicate(), wipe() }.
+     opts: { anchor, session, open(id), create(), duplicate(), wipe(), thumbNow()? }.
      Lists what this browser keeps; the design in this tab is marked, and one
      open in another tab can't be opened here as well. */
   var menu = null;
@@ -2860,11 +2901,21 @@ window.WB = window.WB || {};
       var pick = document.createElement('button');
       pick.type = 'button';
       pick.className = 'ds-pick';
+      var pic = document.createElement('span');
+      pic.className = 'ds-thumb';
+      var src = d.here && opts.thumbNow ? opts.thumbNow() : d.thumb;   // this tab's: as it is now
+      if (src && WB.isImageData(src)) {
+        var im = document.createElement('img');
+        im.alt = ''; im.src = src;
+        pic.appendChild(im);
+      }
+      pick.appendChild(pic);
+      var txt = document.createElement('span'); txt.className = 'ds-txt';
       var nm = document.createElement('span'); nm.className = 'ds-name'; nm.textContent = d.name;
       var meta = document.createElement('span'); meta.className = 'ds-meta';
       meta.textContent = d.here ? (d.unsaved ? 'this tab · not changed yet' : 'this tab · ' + ago(d.t))
                        : d.elsewhere ? 'open in another tab' : ago(d.t);
-      pick.appendChild(nm); pick.appendChild(meta);
+      txt.appendChild(nm); txt.appendChild(meta); pick.appendChild(txt);
       pick.disabled = d.here || d.elsewhere;
       pick.title = d.here ? 'Open in this tab' : d.elsewhere ? 'Open in another tab; switch to that tab to edit it' : 'Open this design here';
       pick.addEventListener('click', function () { closeMenu(); opts.open(d.id); });
@@ -2934,6 +2985,7 @@ window.WB = window.WB || {};
 
   S.remove = function (id) {
     this._del('.d.' + id);
+    this._del('.t.' + id);
     this._del('.open.' + id);
     try { this._set('.index', JSON.stringify(this._index().filter(function (d) { return d.id !== id; }))); } catch (e) { /* full */ }
     if (id === this.id) { this.id = null; this.rev = 0; this.last = null; this._tab(null); }

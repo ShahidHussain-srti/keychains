@@ -115,6 +115,13 @@ where you send it (and anyone with it can read it); pictures never go in links. 
 is hosted on GitHub Pages, where GitHub keeps standard request logs under its own privacy
 statement. Designs → Delete all saved data removes everything the app has kept.
 
+## What you make
+
+The designs you make, and the files and prints you get from them, are yours to use however
+you like: personal or commercial, sold, shared or changed, with no credit needed. The licence
+below covers the tool's own code, not its output. They come with no warranty, so check the fit,
+strength and safety of a print before trusting it with anything that matters.
+
 ## License
 
 Copyright © 2026 shahidhussain2k13@gmail.com

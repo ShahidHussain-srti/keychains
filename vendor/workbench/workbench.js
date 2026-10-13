@@ -1521,6 +1521,9 @@ window.WB = window.WB || {};
  *   Metadata/project_settings.config  filament swatches for both
  *   <basematerials>                   ignored by slicers; used by viewers
  *
+ * Given a bed, model_settings.config also says which plate each object goes on,
+ * and each plate's objects are centred on it where those slicers put it.
+ *
  * A real Bambu file carries no basematerials at all, which is why a file relying
  * on them imports as a single colour.
  */
@@ -1565,30 +1568,56 @@ window.WB = window.WB || {};
   }
 
   function bounds(parts) {
-    var b = { minX: Infinity, minY: Infinity, minZ: Infinity };
+    var b = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity };
     parts.forEach(function (part) {
       var p = part.positions;
       for (var i = 0; i < p.length; i += 3) {
         if (p[i] < b.minX) b.minX = p[i];
+        if (p[i] > b.maxX) b.maxX = p[i];
         if (p[i + 1] < b.minY) b.minY = p[i + 1];
+        if (p[i + 1] > b.maxY) b.maxY = p[i + 1];
         if (p[i + 2] < b.minZ) b.minZ = p[i + 2];
       }
     });
-    if (!isFinite(b.minX)) { b.minX = b.minY = b.minZ = 0; }
+    if (!isFinite(b.minX)) { b.minX = b.minY = b.minZ = b.maxX = b.maxY = 0; }
     return b;
   }
+
+  /* ── plates ─────────────────────────────────────────────────────────
+     Slicers with several plates (Bambu Studio, OrcaSlicer, Creality Print)
+     lay them out in a grid, ⌈√n⌉ to a row and a fifth of a bed apart, the
+     rows going towards −y. This is plate i's front-left corner. */
+  WB.plateOrigin = function (i, n, bed) {
+    var cols = Math.ceil(Math.sqrt(n)) || 1;
+    return { x: (i % cols) * bed.w * 1.2, y: -Math.floor(i / cols) * bed.d * 1.2 };
+  };
+  /* The shift that centres what goes on each plate on it: groups[i] is the
+     bounds ({ minX, maxX, minY, maxY }) of plate i's parts, or null. */
+  WB.plateShifts = function (groups, bed) {
+    return groups.map(function (g, i) {
+      var o = WB.plateOrigin(i, groups.length, bed);
+      return g ? { dx: o.x + bed.w / 2 - (g.minX + g.maxX) / 2, dy: o.y + bed.d / 2 - (g.minY + g.maxY) / 2 }
+               : { dx: o.x, dy: o.y };
+    });
+  };
 
   /* opts: {
        app:     'My Tool'                       written as the Application
        title:   'design name'
-       objects: [{ name, parts: [part, …] }]    one printable object each
+       objects: [{ name, parts: [part, …],      one printable object each
+                   plate: 1 }]                  which plate (1 when not given)
+       bed:     { w, d }                        optional, mm
      }
      A part is { positions, indices, color: '#rrggbb', colorIndex, label },
-     already placed where it should print. Objects keep their x/y layout and
-     each rests on the bed. */
+     already placed where it should print. Each object rests on the bed.
+     Without a bed, objects keep their x/y layout from the front-left corner.
+     With one, each plate's objects keep their layout centred on that plate,
+     and the plates are written down for the slicers that have them; the rest
+     see the objects a bed and a bit apart. */
   WB.export3MF = function (opts) {
     var objects = opts.objects.map(function (o) {
-      return { name: o.name, parts: o.parts.filter(function (p) { return p.indices.length; }) };
+      return { name: o.name, plate: Math.max(1, Math.round(o.plate || 1)),
+               parts: o.parts.filter(function (p) { return p.indices.length; }) };
     }).filter(function (o) { return o.parts.length; });
     var parts = [].concat.apply([], objects.map(function (o) { return o.parts; }));
     if (!parts.length) return Promise.reject(new Error('Nothing to export.'));
@@ -1629,7 +1658,21 @@ window.WB = window.WB || {};
     });
     objects.forEach(function (o) { o.assembly = id++; o.bounds = bounds(o.parts); });
 
-    var all = bounds(parts);
+    var all = bounds(parts), bed = opts.bed && opts.bed.w > 0 && opts.bed.d > 0 ? opts.bed : null;
+    var nPlates = 1, shifts = null;
+    if (bed) {
+      // Plates numbered without gaps, in order, so "plate 3" with nothing on
+      // plate 2 still lands on the second plate.
+      var used = objects.map(function (o) { return o.plate; }).sort(function (a, b) { return a - b; })
+        .filter(function (v, i, a) { return !i || a[i - 1] !== v; });
+      objects.forEach(function (o) { o.plate = used.indexOf(o.plate) + 1; });
+      nPlates = used.length;
+      var groups = used.map(function (pl) {
+        return bounds([].concat.apply([], objects.filter(function (o) { return o.plate === used.indexOf(pl) + 1; })
+                                                 .map(function (o) { return o.parts; })));
+      });
+      shifts = WB.plateShifts(groups, bed);
+    }
 
     var xml = [];
     xml.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -1674,12 +1717,13 @@ window.WB = window.WB || {};
     });
     xml.push('</resources>');
 
-    /* Shared x/y offset keeps the objects side by side as laid out; z is per
+    /* Objects on a plate keep their places relative to each other; z is per
        object so each one rests on the bed. */
     xml.push('<build>');
     objects.forEach(function (o) {
+      var sh = shifts ? shifts[o.plate - 1] : { dx: -all.minX, dy: -all.minY };
       xml.push('<item objectid="' + o.assembly + '" transform="1 0 0 0 1 0 0 0 1 ' +
-               num(-all.minX) + ' ' + num(-all.minY) + ' ' + num(-o.bounds.minZ) + '" printable="1"/>');
+               num(sh.dx) + ' ' + num(sh.dy) + ' ' + num(-o.bounds.minZ) + '" printable="1"/>');
     });
     xml.push('</build>');
     xml.push('</model>');
@@ -1704,6 +1748,22 @@ window.WB = window.WB || {};
       });
       ms2.push('  </object>');
     });
+    // Which plate each object goes on.
+    for (var pl = 1; bed && pl <= nPlates; pl++) {
+      ms2.push('  <plate>');
+      ms2.push('    <metadata key="plater_id" value="' + pl + '"/>');
+      ms2.push('    <metadata key="plater_name" value=""/>');
+      ms2.push('    <metadata key="locked" value="false"/>');
+      objects.forEach(function (o) {
+        if (o.plate !== pl) return;
+        ms2.push('    <model_instance>');
+        ms2.push('      <metadata key="object_id" value="' + o.assembly + '"/>');
+        ms2.push('      <metadata key="instance_id" value="0"/>');
+        ms2.push('      <metadata key="identify_id" value="' + o.assembly + '"/>');
+        ms2.push('    </model_instance>');
+      });
+      ms2.push('  </plate>');
+    }
     ms2.push('</config>');
 
     /* PrusaSlicer / SuperSlicer merge the components into volumes in order, so
@@ -3381,42 +3441,48 @@ window.WB = window.WB || {};
 
   /* A print bed drawn under the model: { w, d, cx, cy, z } in mm, or null.
      A faint plate with a 10 mm grid, darker every 50 mm, measured from its
-     centre, and a firm outline. */
+     centre, and a firm outline. For a print over several plates, `at` lists
+     each plate's centre ([{ cx, cy }, …]) and one is drawn at each. */
   WB.Viewer.prototype.setBed = function (b) {
-    var was = this.bed;
+    var was = this.bedBox;
     this.bed = b && b.w > 0 && b.d > 0 ? b : null;
     this._uploadBed();
     // Zoom to suit when it appears, changes size or goes away.
-    if (this.bed ? (!was || was.w !== this.bed.w || was.d !== this.bed.d) : was) this.fit();
+    var now = this.bedBox;
+    if (now ? (!was || Math.abs(was.w - now.w) > 1e-6 || Math.abs(was.d - now.d) > 1e-6) : was) this.fit();
   };
   WB.Viewer.prototype._uploadBed = function () {
-    if (this.failed) return;
     this.bedRanges = null;
+    this.bedBox = null;
     var b = this.bed;
     if (!b) return;
-    var x0 = b.cx - b.w / 2, x1 = b.cx + b.w / 2, y0 = b.cy - b.d / 2, y1 = b.cy + b.d / 2;
-    var zp = b.z - 0.06, zl = b.z - 0.03, v = [];
-    v.push(x0, y0, zp, x1, y0, zp, x1, y1, zp, x0, y0, zp, x1, y1, zp, x0, y1, zp);
-    var grid = function (major) {
-      var n0 = v.length;
+    var at = b.at && b.at.length ? b.at : [{ cx: b.cx, cy: b.cy }];
+    var zp = b.z - 0.06, zl = b.z - 0.03;
+    var plate = [], minor = [], major = [], edge = [], bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    at.forEach(function (c) {
+      var x0 = c.cx - b.w / 2, x1 = c.cx + b.w / 2, y0 = c.cy - b.d / 2, y1 = c.cy + b.d / 2;
+      bx0 = Math.min(bx0, x0); bx1 = Math.max(bx1, x1); by0 = Math.min(by0, y0); by1 = Math.max(by1, y1);
+      plate.push(x0, y0, zp, x1, y0, zp, x1, y1, zp, x0, y0, zp, x1, y1, zp, x0, y1, zp);
       for (var k = -Math.floor(b.w / 20); k <= Math.floor(b.w / 20); k++) {
-        var x = b.cx + k * 10;
-        if ((k % 5 === 0) !== major || x <= x0 + 1e-6 || x >= x1 - 1e-6) continue;
-        v.push(x, y0, zl, x, y1, zl);
+        var x = c.cx + k * 10;
+        if (x <= x0 + 1e-6 || x >= x1 - 1e-6) continue;
+        (k % 5 === 0 ? major : minor).push(x, y0, zl, x, y1, zl);
       }
       for (var j = -Math.floor(b.d / 20); j <= Math.floor(b.d / 20); j++) {
-        var y = b.cy + j * 10;
-        if ((j % 5 === 0) !== major || y <= y0 + 1e-6 || y >= y1 - 1e-6) continue;
-        v.push(x0, y, zl, x1, y, zl);
+        var y = c.cy + j * 10;
+        if (y <= y0 + 1e-6 || y >= y1 - 1e-6) continue;
+        (j % 5 === 0 ? major : minor).push(x0, y, zl, x1, y, zl);
       }
-      return (v.length - n0) / 3;
-    };
-    var minor = grid(false), major = grid(true);
-    v.push(x0, y0, zl, x1, y0, zl, x1, y0, zl, x1, y1, zl, x1, y1, zl, x0, y1, zl, x0, y1, zl, x0, y0, zl);
+      edge.push(x0, y0, zl, x1, y0, zl, x1, y0, zl, x1, y1, zl, x1, y1, zl, x0, y1, zl, x0, y1, zl, x0, y0, zl);
+    });
+    this.bedBox = { x0: bx0, x1: bx1, y0: by0, y1: by1, w: bx1 - bx0, d: by1 - by0, z: b.z };
+    if (this.failed) return;
+    var v = plate.concat(minor, major, edge), n = function (a) { return a.length / 3; };
     var gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.bbuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
-    this.bedRanges = { plate: [0, 6], minor: [6, minor], major: [6 + minor, major], edge: [6 + minor + major, 8] };
+    var p = n(plate), mi = n(minor), ma = n(major);
+    this.bedRanges = { plate: [0, p], minor: [p, mi], major: [p + mi, ma], edge: [p + mi + ma, n(edge)] };
   };
 
   /* One GPU texture per atlas, re-uploaded only when the atlas itself changed
@@ -3525,7 +3591,9 @@ window.WB = window.WB || {};
   /* Fit the bounding sphere in whichever field of view is narrower. */
   WB.Viewer.prototype.fit = function () {
     var aspect = Math.max(0.2, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
-    var r = this.bed ? Math.max(this.radius, Math.hypot(this.bed.w, this.bed.d) / 2 * 0.95) : this.radius;
+    // A lone bed may tuck its corners just out of view; a row of plates may not.
+    var bb = this.bedBox, many = this.bed && this.bed.at && this.bed.at.length > 1;
+    var r = bb ? Math.max(this.radius, Math.hypot(bb.w, bb.d) / 2 * (many ? 1.2 : 0.95)) : this.radius;
     this.dist = r / Math.sin(0.31) / Math.min(1, aspect) * 1.02;
     this.pan = [0, 0];
     this._framed = this.radius;
@@ -3565,8 +3633,9 @@ window.WB = window.WB || {};
     // flickering against the lettering on its far side.
     var reach = this.radius * 1.6 + Math.hypot(this.pan[0], this.pan[1]);
     if (this.bedRanges) {                     // keep the whole bed inside the depth range
-      var bd = this.bed;
-      reach = Math.max(reach, Math.hypot(Math.abs(bd.cx - target[0]) + bd.w / 2, Math.abs(bd.cy - target[1]) + bd.d / 2,
+      var bd = this.bedBox;
+      reach = Math.max(reach, Math.hypot(Math.max(Math.abs(bd.x0 - target[0]), Math.abs(bd.x1 - target[0])),
+                                         Math.max(Math.abs(bd.y0 - target[1]), Math.abs(bd.y1 - target[1])),
                                          bd.z - target[2]) + 5);
     }
     var proj = perspective(0.62, w / h, Math.max(this.radius * 0.02, this.dist - reach), this.dist + reach);

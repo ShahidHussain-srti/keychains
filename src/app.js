@@ -780,10 +780,18 @@
     return n || 'keychain';
   }
 
+  /* Exports wait for the design's fonts, so a font still loading never
+     comes out as its fallback. */
+  function afterFonts(fn) {
+    var keys = [];
+    ['front', 'back'].forEach(function (w) { (state.sides[w].texts || []).forEach(function (t) { keys.push(t.font); }); });
+    WB.loadFonts(keys).then(function () { setTimeout(fn, 30); });
+  }
+
   function exports_() {
     $('#btn-3mf').addEventListener('click', function () {
       busy(true, 'Building mesh…');
-      setTimeout(function () {
+      afterFonts(function () {
         var model;
         try { model = buildForExport(); }
         catch (e) { busy(false); showWarnings([{ level: 'bad', msg: 'Build failed: ' + e.message }]); return; }
@@ -808,12 +816,12 @@
           busy(false);
           showWarnings([{ level: 'bad', msg: 'Export failed: ' + e.message }]);
         });
-      }, 30);
+      });
     });
 
     $('#btn-stl').addEventListener('click', function () {
       busy(true, 'Building mesh…');
-      setTimeout(function () {
+      afterFonts(function () {
         try {
           var model = buildForExport();
           var blob = KC.exportSTL(model);
@@ -824,7 +832,7 @@
           busy(false);
           showWarnings([{ level: 'bad', msg: 'Export failed: ' + e.message }]);
         }
-      }, 30);
+      });
     });
 
     $('#btn-save').addEventListener('click', function () {
@@ -1264,6 +1272,11 @@
     chrome();
     assets();
     exports_();
+    // A font arriving redraws the text drawn so far in its fallback.
+    window.addEventListener('wbfont', WB.debounce(function () {
+      try { preview.draw(); } catch (e) { console.error('preview draw failed', e); }
+      rebuild();
+    }, 50));
 
     // A link pasted into a tab that already has the app open.
     window.addEventListener('hashchange', function () {

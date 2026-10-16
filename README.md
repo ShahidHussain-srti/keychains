@@ -22,8 +22,9 @@ and double-click `index.html`. It works offline too: the geometry engine
   and braids. Set the inset to 0 for a flush rim, or have the border follow a different
   shape from the plate.
 - **Text**: as many text boxes as you want, each with its own font, size, colour and
-  position. There are 47 fonts, solid or outlined, with spacing, rotation and multiple
-  lines.
+  position. There are 67 fonts, from clean and serif to script, pixel, horror and other odd
+  ones, all shipped with the app so they look the same on every computer; solid or outlined,
+  with spacing, rotation and multiple lines.
 - **Pictures**: upload an image or sketch one in the built-in drawing pad.
 - **Colours**: one per element. A design needs only as many filaments as it has distinct
   colours.
@@ -135,6 +136,10 @@ available too. There's no warranty. See [LICENSE](LICENSE) for the full text.
 [Manifold](https://github.com/elalish/manifold), © The Manifold Authors, under the Apache License 2.0
 ([vendor/workbench/LICENSE-manifold.txt](vendor/workbench/LICENSE-manifold.txt)), which is
 compatible with the GPL.
+
+The 67 text fonts are Google Fonts, each the Latin subset of its regular weight, under the
+SIL Open Font License 1.1 or the Apache License 2.0; the texts are in
+[vendor/workbench/fonts/LICENSE-fonts.txt](vendor/workbench/fonts/LICENSE-fonts.txt).
 
 `vendor/workbench/` is [Workbench](https://github.com/ShahidHussain-srti/workbench), by the
 same author under the same license.

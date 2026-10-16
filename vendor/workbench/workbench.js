@@ -236,86 +236,136 @@ window.WB = window.WB || {};
 /* Workbench — shared parts for browser-based maker tools.
  * Copyright (C) 2026 shahidhussain2k13@gmail.com
  * SPDX-License-Identifier: GPL-3.0-or-later — see LICENSE. */
-/* fonts.js — system font stacks for text, identified by key. */
+/* fonts.js — the text fonts, bundled and loaded when used, identified by key. */
 window.WB = window.WB || {};
 (function (WB) {
   'use strict';
 
-  /* Fonts are resolved from the system; each entry is a stack with fallbacks so
-     the app still works where a face is missing. Identified by `key`, not by
-     position, so the list can grow without changing anyone's saved design. */
+  /* Every font ships with the library (fonts/<key>.js, the Latin regular of a
+     Google Font under the OFL or Apache licence; see fonts/LICENSE-fonts.txt),
+     so a design looks the same on every machine instead of falling back to
+     whatever is installed. Identified by `key`, not position, so the list can
+     grow without changing anyone's saved design; older keys keep their place
+     with a face of their own. `css` is the stack, `fb` the fallback while the
+     font loads. Bold and italic are synthesised from the regular. */
+  var F = function (key, name, group, fb) { return { key: key, name: name, group: group, css: '"WB ' + key + '",' + fb }; };
   WB.FONTS = [
-    // clean
-    { key: 'grotesk',   name: 'Grotesk',     group: 'Clean',  css: '"Avenir Next","Helvetica Neue",Helvetica,Arial,sans-serif' },
-    { key: 'neue',      name: 'Neue Sans',   group: 'Clean',  css: '"Helvetica Neue",Helvetica,Arial,sans-serif' },
-    { key: 'futura',    name: 'Futura',      group: 'Clean',  css: 'Futura,"Century Gothic","Avenir Next",sans-serif' },
-    { key: 'optima',    name: 'Optima',      group: 'Clean',  css: 'Optima,Candara,"Gill Sans","Trebuchet MS",sans-serif' },
-    { key: 'rounded',   name: 'Rounded',     group: 'Clean',  css: '"Arial Rounded MT Bold",Nunito,"Trebuchet MS",sans-serif' },
-    { key: 'condensed', name: 'Condensed',   group: 'Clean',  css: '"Arial Narrow","Avenir Next Condensed","Helvetica Neue",sans-serif' },
-    { key: 'wideblack', name: 'Wide Black',  group: 'Clean',  css: '"Arial Black","Arial Bold",Gadget,sans-serif' },
+    F('grotesk', 'Inter', 'Clean', 'sans-serif'),
+    F('neue', 'Space Grotesk', 'Clean', 'sans-serif'),
+    F('futura', 'Jost', 'Clean', 'sans-serif'),
+    F('skia', 'Josefin Sans', 'Clean', 'sans-serif'),
+    F('optima', 'Belleza', 'Clean', 'sans-serif'),
+    F('rounded', 'Fredoka', 'Clean', 'sans-serif'),
+    F('bauhaus', 'Comfortaa', 'Clean', 'sans-serif'),
+    F('condensed', 'Oswald', 'Clean', 'sans-serif'),
+    F('wideblack', 'Archivo Black', 'Clean', 'sans-serif'),
 
-    // serif
-    { key: 'serif',     name: 'Serif',       group: 'Serif',  css: 'Georgia,"Times New Roman",serif' },
-    { key: 'baskerville', name: 'Baskerville', group: 'Serif', css: 'Baskerville,"Libre Baskerville",Georgia,serif' },
-    { key: 'cochin',    name: 'Cochin',      group: 'Serif',  css: 'Cochin,"Hoefler Text",Georgia,serif' },
-    { key: 'elegant',   name: 'Elegant',     group: 'Serif',  css: 'Didot,"Bodoni 72","Playfair Display",Georgia,serif' },
-    { key: 'slab',      name: 'Slab',        group: 'Serif',  css: 'Rockwell,"Courier New",Georgia,serif' },
-    { key: 'clarendon', name: 'Fat Slab',    group: 'Serif',  css: 'Superclarendon,"Rockwell Extra Bold",Rockwell,Georgia,serif' },
-    { key: 'copperplate', name: 'Copperplate', group: 'Serif', css: 'Copperplate,"Copperplate Gothic Light",Optima,serif' },
+    F('serif', 'Lora', 'Serif', 'serif'),
+    F('baskerville', 'Libre Baskerville', 'Serif', 'serif'),
+    F('cochin', 'EB Garamond', 'Serif', 'serif'),
+    F('elegant', 'Playfair Display', 'Serif', 'serif'),
+    F('slab', 'Zilla Slab', 'Serif', 'serif'),
+    F('clarendon', 'Alfa Slab One', 'Serif', 'serif'),
+    F('copperplate', 'Cinzel', 'Serif', 'serif'),
+    F('herculanum', 'Cinzel Decorative', 'Serif', 'serif'),
+    F('fraktur', 'UnifrakturMaguntia', 'Serif', 'serif'),
 
-    // display / fun
-    { key: 'impact',    name: 'Impact',      group: 'Display', css: 'Impact,Haettenschweiler,"Arial Black",sans-serif' },
-    { key: 'stencil',   name: 'Stencil',     group: 'Display', css: 'Stencil,"Stencil Std","Arial Black",fantasy' },
-    { key: 'phosphate', name: 'Phosphate',   group: 'Display', css: 'Phosphate,"Arial Narrow Bold",Impact,sans-serif' },
-    { key: 'playbill',  name: 'Playbill',    group: 'Display', css: 'Playbill,Rockwell,"Arial Black",fantasy' },
-    { key: 'luminari',  name: 'Luminari',    group: 'Display', css: 'Luminari,Herculanum,Papyrus,fantasy' },
-    { key: 'herculanum',name: 'Herculanum',  group: 'Display', css: 'Herculanum,Luminari,Copperplate,fantasy' },
-    { key: 'papyrus',   name: 'Papyrus',     group: 'Display', css: 'Papyrus,Herculanum,fantasy' },
-    { key: 'jazz',      name: 'Jazz',        group: 'Display', css: '"Jazz LET","Party LET",Impact,fantasy' },
-    { key: 'party',     name: 'Party',       group: 'Display', css: '"Party LET","Jazz LET","Comic Sans MS",fantasy' },
-    { key: 'krungthep', name: 'Techno',      group: 'Display', css: 'Krungthep,"Silom","Courier New",monospace' },
-    { key: 'bauhaus',   name: 'Geometric',   group: 'Display', css: '"Bauhaus 93","Century Gothic",Futura,sans-serif' },
+    F('impact', 'Anton', 'Display', 'sans-serif'),
+    F('sixcaps', 'Six Caps', 'Display', 'sans-serif'),
+    F('stencil', 'Stardos Stencil', 'Display', 'sans-serif'),
+    F('phosphate', 'Bungee', 'Display', 'sans-serif'),
+    F('playbill', 'Rye', 'Display', 'serif'),
+    F('luminari', 'MedievalSharp', 'Display', 'serif'),
+    F('papyrus', 'Uncial Antiqua', 'Display', 'serif'),
+    F('jazz', 'Righteous', 'Display', 'sans-serif'),
+    F('party', 'Bangers', 'Display', 'sans-serif'),
+    F('krungthep', 'Orbitron', 'Display', 'sans-serif'),
+    F('shrikhand', 'Shrikhand', 'Display', 'serif'),
 
-    // script + hand
-    { key: 'script',    name: 'Script',      group: 'Script & hand', css: '"Snell Roundhand","Brush Script MT",cursive' },
-    { key: 'savoye',    name: 'Savoye',      group: 'Script & hand', css: '"Savoye LET","Snell Roundhand","Brush Script MT",cursive' },
-    { key: 'zapfino',   name: 'Flourish',    group: 'Script & hand', css: 'Zapfino,"Savoye LET","Snell Roundhand",cursive' },
-    { key: 'signpainter', name: 'Sign Painter', group: 'Script & hand', css: 'SignPainter,"Brush Script MT","Marker Felt",cursive' },
-    { key: 'trattatello', name: 'Quill',     group: 'Script & hand', css: 'Trattatello,Herculanum,Papyrus,fantasy' },
-    { key: 'hand',      name: 'Handwriting', group: 'Script & hand', css: '"Bradley Hand","Comic Sans MS",cursive' },
-    { key: 'noteworthy',name: 'Noteworthy',  group: 'Script & hand', css: 'Noteworthy,"Bradley Hand","Comic Sans MS",cursive' },
-    { key: 'marker',    name: 'Marker',      group: 'Script & hand', css: '"Marker Felt","Comic Sans MS",cursive' },
-    { key: 'chalk',     name: 'Chalk',       group: 'Script & hand', css: 'Chalkduster,"Chalkboard SE","Comic Sans MS",fantasy' },
-    { key: 'chalkboard',name: 'Chalkboard',  group: 'Script & hand', css: '"Chalkboard SE",Chalkboard,"Comic Sans MS",sans-serif' },
-    { key: 'comic',     name: 'Comic',       group: 'Script & hand', css: '"Comic Sans MS","Chalkboard SE",cursive' },
-    { key: 'skia',      name: 'Skia',        group: 'Script & hand', css: 'Skia,"Gill Sans","Trebuchet MS",sans-serif' },
+    F('script', 'Great Vibes', 'Script & hand', 'cursive'),
+    F('savoye', 'Pinyon Script', 'Script & hand', 'cursive'),
+    F('zapfino', 'Alex Brush', 'Script & hand', 'cursive'),
+    F('signpainter', 'Yellowtail', 'Script & hand', 'cursive'),
+    F('pacifico', 'Pacifico', 'Script & hand', 'cursive'),
+    F('trattatello', 'IM Fell English', 'Script & hand', 'serif'),
+    F('hand', 'Caveat', 'Script & hand', 'cursive'),
+    F('noteworthy', 'Patrick Hand', 'Script & hand', 'cursive'),
+    F('marker', 'Permanent Marker', 'Script & hand', 'cursive'),
+    F('chalk', 'Cabin Sketch', 'Script & hand', 'cursive'),
+    F('chalkboard', 'Schoolbell', 'Script & hand', 'cursive'),
+    F('comic', 'Comic Neue', 'Script & hand', 'cursive'),
 
-    // mono
-    { key: 'mono',      name: 'Monospace',   group: 'Mono',   css: '"SF Mono",Menlo,Consolas,"Courier New",monospace' },
-    { key: 'typewriter',name: 'Typewriter',  group: 'Mono',   css: '"American Typewriter","Courier New",monospace' },
+    F('mono', 'JetBrains Mono', 'Mono', 'monospace'),
+    F('typewriter', 'Special Elite', 'Mono', 'monospace'),
+    F('pixel', 'Press Start 2P', 'Mono', 'monospace'),
 
-    /* Motorcycle marques all use commissioned typefaces that are licensed, not
-       installed, and cannot be shipped here. Each stack asks for the real family
-       first — so it is used if you happen to own it — then falls back to the
-       closest face macOS provides. Names say "-ish" because that is what they
-       are: look-alikes, not the originals. */
-    { key: 'moto-cruiser', name: 'Cruiser Slab (H-D-ish)', group: 'Motorcycle style',
-      css: '"Harley Script",Superclarendon,"Rockwell Extra Bold",Rockwell,"Bookman Old Style",serif' },
-    { key: 'moto-race',    name: 'Race Italic (Ducati-ish)', group: 'Motorcycle style',
-      css: '"Ducati Bold",Futura,"Avenir Next Condensed","Century Gothic",sans-serif' },
-    { key: 'moto-condensed', name: 'Race Condensed (KTM-ish)', group: 'Motorcycle style',
-      css: '"KTM Sans","Avenir Next Condensed","Arial Narrow",Impact,sans-serif' },
-    { key: 'moto-touring', name: 'Touring Sans (BMW-ish)', group: 'Motorcycle style',
-      css: '"BMW Motorrad","Helvetica Neue",Helvetica,Arial,sans-serif' },
-    { key: 'moto-geo',     name: 'Geometric (Honda-ish)', group: 'Motorcycle style',
-      css: '"Honda Sans",Futura,"Century Gothic","Avenir Next",sans-serif' },
-    { key: 'moto-heritage', name: 'Heritage Serif (Triumph-ish)', group: 'Motorcycle style',
-      css: '"Triumph Sans",Cochin,Baskerville,"Hoefler Text",Georgia,serif' },
-    { key: 'moto-script',  name: 'Retro Script (Indian-ish)', group: 'Motorcycle style',
-      css: '"Indian Script","Snell Roundhand","Savoye LET","Brush Script MT",cursive' },
-    { key: 'moto-enduro',  name: 'Enduro Stencil', group: 'Motorcycle style',
-      css: 'Stencil,"Stencil Std","Arial Black",Impact,fantasy' }
+    F('creepster', 'Creepster', 'Fun & odd', 'fantasy'),
+    F('eater', 'Eater', 'Fun & odd', 'fantasy'),
+    F('monoton', 'Monoton', 'Fun & odd', 'fantasy'),
+    F('bungeeshade', 'Bungee Shade', 'Fun & odd', 'fantasy'),
+    F('rampart', 'Rampart One', 'Fun & odd', 'fantasy'),
+    F('glitch', 'Rubik Glitch', 'Fun & odd', 'fantasy'),
+    F('moonrocks', 'Rubik Moonrocks', 'Fun & odd', 'fantasy'),
+    F('bubbles', 'Rubik Bubbles', 'Fun & odd', 'fantasy'),
+    F('frijole', 'Frijole', 'Fun & odd', 'fantasy'),
+    F('faster', 'Faster One', 'Fun & odd', 'fantasy'),
+    F('lucky', 'Luckiest Guy', 'Fun & odd', 'fantasy'),
+    F('chewy', 'Chewy', 'Fun & odd', 'fantasy'),
+    F('diner', 'Fontdiner Swanky', 'Fun & odd', 'fantasy'),
+    F('barriecito', 'Barriecito', 'Fun & odd', 'fantasy'),
+    F('ewert', 'Ewert', 'Fun & odd', 'fantasy'),
+
+    /* The marques' own typefaces are licensed, not free, so these are open
+       fonts in the same spirit, not copies. */
+    F('moto-cruiser', 'Graduate (cruiser)', 'Motorcycle style', 'serif'),
+    F('moto-race', 'Russo One (race)', 'Motorcycle style', 'sans-serif'),
+    F('moto-condensed', 'Teko (race condensed)', 'Motorcycle style', 'sans-serif'),
+    F('moto-touring', 'Barlow (touring)', 'Motorcycle style', 'sans-serif'),
+    F('moto-geo', 'Kanit (geometric)', 'Motorcycle style', 'sans-serif'),
+    F('moto-heritage', 'Abril Fatface (heritage)', 'Motorcycle style', 'serif'),
+    F('moto-script', 'Lobster (retro script)', 'Motorcycle style', 'cursive'),
+    F('moto-enduro', 'Black Ops One (enduro)', 'Motorcycle style', 'fantasy')
   ];
+
+  /* Loading. Each font is a script calling WB.fontData with its bytes, which
+     works from file:// too (a font file fetched by URL would not); the face
+     is added from memory. 'wbfont' fires on window as each one arrives, so
+     the app can redraw; WB.fontEpoch counts them, for cache keys. */
+  var base = (function () {
+    var s = typeof document !== 'undefined' && document.currentScript && document.currentScript.src;
+    return s ? s.replace(/[^/]*$/, '') : '';
+  })();
+  var loading = {}, done = {}, ready = {};
+  WB.fontEpoch = 0;
+  WB.fontData = function (key, b64) {
+    var bin = atob(b64), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    var face = new FontFace('WB ' + key, u.buffer);
+    face.load().then(function () {
+      document.fonts.add(face);
+      ready[key] = true;
+      WB.fontEpoch++;
+      window.dispatchEvent(new CustomEvent('wbfont', { detail: key }));
+    }, function () { /* unreadable: the fallback stays */ }).then(function () { if (done[key]) done[key](); });
+  };
+  /* Starts loading a font (a key or legacy index) if it hasn't, and resolves
+     once it is in, or once it has failed and the fallback is all there is. */
+  WB.loadFont = function (k) {
+    var key = WB.fontKey(k);
+    if (typeof document === 'undefined' || typeof FontFace === 'undefined') return Promise.resolve();
+    if (!loading[key]) {
+      loading[key] = new Promise(function (resolve) {
+        done[key] = resolve;
+        var s = document.createElement('script');
+        s.src = base + 'fonts/' + key + '.js';
+        s.onerror = resolve;
+        document.head.appendChild(s);
+      });
+    }
+    return loading[key];
+  };
+  WB.fontReady = function (k) { return !!ready[WB.fontKey(k)]; };
+  WB.loadFonts = function (keys) { return Promise.all((keys || []).map(WB.loadFont)); };
 
   /* v1/v2 designs stored the font as an index into this exact order. */
   var LEGACY_FONTS = ['grotesk', 'neue', 'rounded', 'wideblack', 'condensed', 'serif',
@@ -1336,6 +1386,7 @@ window.WB = window.WB || {};
     if (px < 1) return null;
 
     var lines = content.split('\n');
+    WB.loadFont(tx.font);       // drawn in the fallback until it arrives; the app redraws on 'wbfont'
     var font = (tx.italic ? 'italic ' : '') + (tx.bold ? '700 ' : '400 ') + px + 'px ' +
                WB.fontByKey(WB.fontKey(tx.font)).css;
     var track = tx.tracking * t.s;

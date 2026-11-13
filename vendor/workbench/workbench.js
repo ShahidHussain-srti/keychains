@@ -3425,6 +3425,7 @@ window.WB = window.WB || {};
      way the app does (begin an undo step, fn(art), rebuild). Cheap to call on
      every repaint: it redraws only when the colours change. */
   WB.artPaletteEditor = function (box, getArt, edit) {
+    if (!box) return;
     var art = getArt();
     var pal = art && WB.resolveArtMode(art) === 'colors' ? WB.artPalette(art) : [];
     var sig = JSON.stringify(pal);

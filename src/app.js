@@ -554,7 +554,9 @@
       else if (el.type === 'checkbox') { var v = WB.get(state, P(el.dataset.bind)); if (v !== undefined) el.checked = !!v; }
     });
     if (bedPicker) bedPicker.paint(state.bed);
-    paintColours();
+    // Like the preview below, a hiccup here must not stop the mesh.
+    try { paintColours(); }
+    catch (e) { console.error('colour panel failed', e); }
     paintSide();
     // The preview and the mesh are independent; a hiccup in one must not stop
     // the other, or the exported file silently stops tracking the design.

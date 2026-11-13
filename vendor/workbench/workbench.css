@@ -238,6 +238,14 @@ input.colorfield{
   width:22px; height:22px; border-radius:5px; border:1px solid var(--line2);
   box-shadow:inset 0 0 0 1px rgba(128,128,128,.25);
 }
+.swatchrow{display:flex; flex-wrap:wrap; gap:4px; margin-top:4px}
+.swatchrow .s{width:16px; height:16px; min-width:0; padding:0; border-radius:4px; border:1px solid var(--line2);
+  box-shadow:inset 0 0 0 1px rgba(128,128,128,.25); line-height:14px; font-size:11px}
+.swatchrow .s.saved{border-radius:50%}
+.swatchrow .s.add{background:transparent; color:var(--ink3)}
+.palrow{display:flex; align-items:flex-start; gap:8px}
+.palrow .found{flex:none; width:26px; height:26px; border-radius:6px; border:1px solid var(--line2)}
+.palrow .pick{flex:1; min-width:0}
 .legal{margin:18px 14px 0; font-size:10.5px; line-height:1.5; color:var(--ink3)}
 .legal a{color:var(--ink2)}
 /* remove buttons stay red */

@@ -24,7 +24,7 @@ window.KC = window.KC || {};
   KC.newArt = function (opts) {
     return Object.assign({
       id: WB.newId('a'), source: 'none', mode: 'auto', threshold: 0.5, size: 15,
-      rotation: 0, mirror: false, x: -17, y: 0, color: '#4b8ef0'
+      rotation: 0, mirror: false, x: -17, y: 0, color: '#4b8ef0', merge: 12, recolor: {}
     }, opts || {});
   };
 
@@ -89,7 +89,7 @@ window.KC = window.KC || {};
       KC.faceItems(f).forEach(function (e) {
         if (e.kind === 'text' && !(e.item.content || '').trim()) return;
         if (e.kind === 'art' && e.item.source === 'none') return;
-        add(e.item.color);
+        (e.kind === 'art' ? WB.artColors(e.item) : [e.item.color]).forEach(add);
       });
     });
     return seen;

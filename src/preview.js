@@ -183,7 +183,9 @@ window.KC = window.KC || {};
         if (e.item.source === 'none') return;
         var art = layer('prevart');
         if (!WB.drawArt(art.g, e.item, t)) return;
-        if (WB.resolveArtMode(e.item) !== 'alpha') {
+        var mode = WB.resolveArtMode(e.item);
+        if (mode === 'colors') { /* already drawn in its print colours */ }
+        else if (mode !== 'alpha') {
           // keep a thresholded photo readable while it is being tuned
           art.g.globalCompositeOperation = 'source-atop';
           art.g.fillStyle = e.item.color;

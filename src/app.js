@@ -49,6 +49,9 @@
   /* One colour per element, so the count is whatever the design needs. */
   function paintColours() {
     var used = KC.coloursUsed(state);
+    WB.swatches(used);
+    WB.artPaletteEditor($('#art-palette'), function () { var f = faceNow(); return f.arts[f.artIdx]; },
+      function (fn) { var f = faceNow(), a = f.arts[f.artIdx]; if (!a) return; beginEdit(0); fn(a); apply(); });
     var box = $('#used-colours');
     if (box) {
       box.innerHTML = '';
@@ -466,6 +469,9 @@
     });
   }
   function match(rule) {
+    return rule.split(' ').every(match1);
+  }
+  function match1(rule) {
     var i = rule.indexOf(':');
     var path = rule.slice(0, i), vals = rule.slice(i + 1).split('|');
     var cur = String(WB.get(state, P(path)));

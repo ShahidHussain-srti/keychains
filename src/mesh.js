@@ -41,17 +41,22 @@ window.KC = window.KC || {};
     var plate = KC.plateMask(KC.faceState(state, which), g);
 
     KC.faceItems(face).forEach(function (e) {
-      var m = null;
-      if (e.kind === 'border') m = WB.borderMask(state.sides[which].border, KC.faceOutline(state), g, plate);
-      else if (e.kind === 'text') m = WB.textMask(e.item, g);
-      else m = WB.artMask(e.item, g);
-      if (!m) return;
-      // Text and pictures read the right way round from the back; the border
-      // follows the plate's own outline, which is not mirrored.
-      if (mirror && e.kind !== 'border') m = WB.mirrorMaskX(m, g);
-      out.raw.push({ kind: e.kind, index: e.index, mask: m });
-      out.list.push({ kind: e.kind, index: e.index, item: e.item,
-                      color: e.item.color, mask: WB.mask.and(m, plateSolid) });
+      // A multi-colour picture is one layer per colour; `layer` numbers them.
+      var layers = e.kind === 'art' ? WB.artLayers(e.item, g) : [];
+      if (e.kind === 'border') layers = [{ mask: WB.borderMask(state.sides[which].border, KC.faceOutline(state), g, plate) }];
+      else if (e.kind === 'text') layers = [{ mask: WB.textMask(e.item, g) }];
+      var all = null;
+      layers.forEach(function (l, i) {
+        var m = l.mask;
+        if (!m) return;
+        // Text and pictures read the right way round from the back; the border
+        // follows the plate's own outline, which is not mirrored.
+        if (mirror && e.kind !== 'border') m = WB.mirrorMaskX(m, g);
+        all = WB.mask.union(all, m);
+        out.list.push({ kind: e.kind, index: e.index, item: e.item, layer: layers.length > 1 ? i + 1 : 0,
+                        color: l.color || e.item.color, mask: WB.mask.and(m, plateSolid) });
+      });
+      if (all) out.raw.push({ kind: e.kind, index: e.index, mask: all });
     });
 
     /* Topmost wins: walk down the stack subtracting everything above. */
@@ -229,8 +234,8 @@ window.KC = window.KC || {};
         bodies[w].forEach(function (b) {
           var e = b.e;
           var n = e.kind === 'border' ? '' : ' ' + (e.index + 1);
-          var label = NAME[e.kind] + n + (live.front && live.back ? ' (' + w + ')' : '');
-          var key = e.kind + (e.kind === 'border' ? '' : (e.index + 1)) + '-' + w;
+          var label = NAME[e.kind] + n + (e.layer ? ' colour ' + e.layer : '') + (live.front && live.back ? ' (' + w + ')' : '');
+          var key = e.kind + (e.kind === 'border' ? '' : (e.index + 1)) + (e.layer ? 'c' + e.layer : '') + '-' + w;
           parts.push(toPart(b.m, key, label, e.color));
         });
       });
@@ -280,7 +285,7 @@ window.KC = window.KC || {};
       /* Per element: is it off the plate, clipped, or too small to render? */
       var face = state.sides[which];
       var placed = {};
-      m.list.forEach(function (e) { placed[e.kind + (e.index || 0)] = e.mask; });
+      m.list.forEach(function (e) { var k = e.kind + (e.index || 0); placed[k] = WB.mask.union(placed[k] || null, e.mask); });
 
       m.raw.forEach(function (r) {
         var live2 = placed[r.kind + (r.index || 0)];

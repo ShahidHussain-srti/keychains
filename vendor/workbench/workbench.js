@@ -1483,8 +1483,8 @@ window.WB = window.WB || {};
 
   /* ── picture / drawing ──────────────────────────────────────────── */
   /* Places the bitmap; returns the device-space box it occupies. */
-  WB.artPlacement = function (art, t) {
-    var src = WB.artBitmap(art);
+  WB.artPlacement = function (art, t, src) {
+    src = src || WB.artBitmap(art);
     if (!src) return null;
     if (src._bbox === undefined) src._bbox = WB.contentBBox(src);
     var bb = src._bbox;
@@ -1495,8 +1495,13 @@ window.WB = window.WB || {};
              cx: t.ox + art.x * t.s, cy: t.oy - art.y * t.s };
   };
 
+  /* What gets drawn: the bitmap, or for a multi-colour picture its recoloured copy. */
+  function artSource(art) {
+    return WB.resolveArtMode(art) === 'colors' ? WB.artRecolored(art) : WB.artBitmap(art);
+  }
+
   WB.drawArt = function (ctx, art, t) {
-    var p = WB.artPlacement(art, t);
+    var p = WB.artPlacement(art, t, artSource(art));
     if (!p) return false;
     ctx.save();
     ctx.translate(p.cx, p.cy);
@@ -1515,6 +1520,9 @@ window.WB = window.WB || {};
     if (art.mode !== 'auto') return art.mode;
     var src = WB.assets.images[art.id];
     if (!src) return 'alpha';
+    return hasAlpha(src) ? 'alpha' : 'dark';
+  };
+  function hasAlpha(src) {
     if (src._hasAlpha == null) {
       var c = document.createElement('canvas');
       var w = c.width = Math.min(160, src.width), h = c.height = Math.min(160, src.height);
@@ -1524,8 +1532,8 @@ window.WB = window.WB || {};
       for (var i = 3; i < d.length; i += 4) if (d[i] < 240) transparent++;
       src._hasAlpha = transparent > (w * h) * 0.02;
     }
-    return src._hasAlpha ? 'alpha' : 'dark';
-  };
+    return src._hasAlpha;
+  }
 
   WB.artMask = function (art, g) {
     if (!WB.artBitmap(art)) return null;
@@ -1537,7 +1545,7 @@ window.WB = window.WB || {};
     var img = o.ctx.getImageData(0, 0, g.cols, g.rows).data;
     var n = g.cols * g.rows, out = new Float32Array(n);
 
-    if (mode === 'alpha') {
+    if (mode === 'alpha' || mode === 'colors') {
       for (var i = 0; i < n; i++) out[i] = img[i * 4 + 3] / 255;
     } else {
       var thr = art.threshold, soft = 0.09, dark = (mode === 'dark');
@@ -1550,6 +1558,178 @@ window.WB = window.WB || {};
       }
     }
     return WB.mask.sealEdges(out, g);
+  };
+
+  /* ── multi-colour pictures ──────────────────────────────────────── */
+  /* An uploaded picture in 'colors' mode prints as one body per colour. Its
+     pixels are grouped into a handful of colours, and colours closer than
+     art.merge (ΔE: how different they look) are crushed into one. Each group
+     prints in its own colour unless art.recolor maps it: {found: '#hex'}, or
+     '' to leave it out. */
+  WB.ART_MAX_COLORS = 8;
+  var HEX = /^#[0-9A-F]{6}$/i;
+
+  function lin(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function labF(t) { return t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116; }
+  function toLab(r, g, b) {
+    r = lin(r); g = lin(g); b = lin(b);
+    var x = labF((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047),
+        y = labF(0.2126 * r + 0.7152 * g + 0.0722 * b),
+        z = labF((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+  function d2(a, b) { var x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2]; return x * x + y * y + z * z; }
+  function nearest(list, v) {
+    var bi = -1, bd = Infinity;
+    for (var i = 0; i < list.length; i++) { var d = d2(list[i], v); if (d < bd) { bd = d; bi = i; } }
+    return bi;
+  }
+  function toHex(r, g, b) {
+    return '#' + ((1 << 24) | (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)).toString(16).slice(1).toUpperCase();
+  }
+  function rgb255(hex) { return WB.hexToRgb(hex).map(function (v) { return v * 255; }); }
+
+  /* RGBA pixels (w wide) → at most `max` colours, biggest first:
+     [{hex, lab, count, edge}], edge being how many of its pixels sit on the
+     border. Opaque pixels only; specks under 0.3 % fold into the nearest. */
+  WB.quantizeColors = function (d, w, merge, max) {
+    var bins = {}, keys = [], n = d.length / 4, h = n / w, total = 0;
+    for (var i = 0; i < n; i++) {
+      if (d[i * 4 + 3] < 128) continue;
+      var r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+      var k = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3);
+      var bin = bins[k];
+      if (!bin) { bin = bins[k] = { r: 0, g: 0, b: 0, n: 0, e: 0 }; keys.push(k); }
+      bin.r += r; bin.g += g; bin.b += b; bin.n++; total++;
+      var x = i % w, y = (i / w) | 0;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) bin.e++;
+    }
+    // Biggest first, so each crushed group is seeded by its main shade.
+    var groups = [], seeds = [], m2 = merge * merge;
+    keys.map(function (k) { return bins[k]; }).sort(function (a, b) { return b.n - a.n; }).forEach(function (bin) {
+      var lab = toLab(bin.r / bin.n, bin.g / bin.n, bin.b / bin.n), gi = nearest(seeds, lab);
+      if (gi >= 0 && d2(seeds[gi], lab) <= m2) {
+        var gr = groups[gi];
+        gr.r += bin.r; gr.g += bin.g; gr.b += bin.b; gr.n += bin.n; gr.e += bin.e;
+      } else {
+        seeds.push(lab);
+        groups.push({ r: bin.r, g: bin.g, b: bin.b, n: bin.n, e: bin.e });
+      }
+    });
+    groups.forEach(function (gr) {
+      gr.hex = toHex(gr.r / gr.n, gr.g / gr.n, gr.b / gr.n);
+      gr.lab = toLab(gr.r / gr.n, gr.g / gr.n, gr.b / gr.n);
+    });
+    groups.sort(function (a, b) { return b.n - a.n; });
+    var keep = groups.filter(function (gr, i) { return i < max && gr.n >= total * 0.003; });
+    if (!keep.length) keep = groups.slice(0, 1);
+    var keepLabs = keep.map(function (q) { return q.lab; });
+    groups.forEach(function (gr) {
+      if (keep.indexOf(gr) >= 0) return;
+      var to = keep[nearest(keepLabs, gr.lab)];
+      to.n += gr.n; to.e += gr.e;                // its pixels join; the colour stays
+    });
+    keep.sort(function (a, b) { return b.n - a.n; });
+    return keep.map(function (gr) { return { hex: gr.hex, lab: gr.lab, count: gr.n, edge: gr.e }; });
+  };
+
+  function imageOf(art) { return art && art.source === 'image' ? WB.assets.images[art.id] || null : null; }
+  function mergeOf(art) { var m = +art.merge; return isFinite(m) ? WB.clamp(m, 0, 100) : 0; }
+
+  /* Grouped on a small copy: enough to find the colours, cheap to redo. */
+  function groupsOf(art, src) {
+    var merge = mergeOf(art);
+    if (!src._groups || src._groups.merge !== merge) {
+      if (!src._sample) {
+        var k = Math.min(1, 256 / Math.max(src.width, src.height));
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
+        var cx = c.getContext('2d', { willReadFrequently: true });
+        cx.drawImage(src, 0, 0, c.width, c.height);
+        src._sample = { d: cx.getImageData(0, 0, c.width, c.height).data, w: c.width };
+      }
+      src._groups = { merge: merge, list: WB.quantizeColors(src._sample.d, src._sample.w, merge, WB.ART_MAX_COLORS) };
+    }
+    return src._groups.list;
+  }
+
+  /* [{src, out, count}]: each colour found, and what it prints as ('' = left out). */
+  WB.artPalette = function (art) {
+    var src = imageOf(art);
+    if (!src) return [];
+    var list = groupsOf(art, src), rec = art.recolor || {}, bg = -1;
+    if (!hasAlpha(src)) {
+      // No transparency: the colour holding most of the border is the background.
+      var edges = 0;
+      list.forEach(function (g) { edges += g.edge; });
+      list.forEach(function (g, i) { if (g.edge > edges * 0.5) bg = i; });
+    }
+    return list.map(function (g, i) {
+      var o = rec[g.hex];
+      if (o !== '' && !HEX.test(o)) o = i === bg ? '' : g.hex;   // saved or shared junk falls back
+      return { src: g.hex, out: o.toUpperCase(), count: g.count };
+    });
+  };
+
+  /* The distinct colours a picture prints in. */
+  WB.artColors = function (art) {
+    if (WB.resolveArtMode(art) !== 'colors') return [art.color];
+    var seen = [];
+    WB.artPalette(art).forEach(function (p) { if (p.out && seen.indexOf(p.out) < 0) seen.push(p.out); });
+    return seen;
+  };
+
+  /* The picture repainted in its print colours, full size, left-out colours
+     transparent. Keeps the original's bounding box so the picture doesn't
+     jump when a colour is dropped. */
+  WB.artRecolored = function (art) {
+    var src = imageOf(art);
+    if (!src) return null;
+    var pal = WB.artPalette(art), key = mergeOf(art) + JSON.stringify(pal);
+    if (src._recol && src._recol.key === key) return src._recol.canvas;
+    var labs = groupsOf(art, src).map(function (g) { return g.lab; });
+    var outs = pal.map(function (p) { return p.out ? rgb255(p.out) : null; });
+    var c = document.createElement('canvas');
+    c.width = src.width; c.height = src.height;
+    var cx = c.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(src, 0, 0);
+    var im = cx.getImageData(0, 0, c.width, c.height), d = im.data;
+    var memo = new Int8Array(32768).fill(-1);   // 5-bit-per-channel colour → group
+    for (var i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      var k = (d[i] >> 3) << 10 | (d[i + 1] >> 3) << 5 | (d[i + 2] >> 3);
+      if (memo[k] < 0) memo[k] = nearest(labs, toLab((d[i] | 7) - 3, (d[i + 1] | 7) - 3, (d[i + 2] | 7) - 3));
+      var o = outs[memo[k]];
+      if (!o) { d[i + 3] = 0; continue; }
+      d[i] = o[0]; d[i + 1] = o[1]; d[i + 2] = o[2];
+    }
+    cx.putImageData(im, 0, 0);
+    if (src._bbox === undefined) src._bbox = WB.contentBBox(src);
+    c._bbox = src._bbox;
+    src._recol = { key: key, canvas: c };
+    return c;
+  };
+
+  /* A picture as [{color, mask}]: one layer per print colour, or one for a
+     single-colour picture. Layers never overlap. */
+  WB.artLayers = function (art, g) {
+    if (WB.resolveArtMode(art) !== 'colors') {
+      var m = WB.artMask(art, g);
+      return m ? [{ color: art.color, mask: m }] : [];
+    }
+    var cols = WB.artColors(art);
+    if (!cols.length) return [];
+    var o = ctxFor('art', g);
+    if (!WB.drawArt(o.ctx, art, gridTransform(g))) return [];
+    var img = o.ctx.getImageData(0, 0, g.cols, g.rows).data, n = g.cols * g.rows;
+    var rgb = cols.map(rgb255), masks = cols.map(function () { return new Float32Array(n); });
+    for (var j = 0; j < n; j++) {
+      var a = img[j * 4 + 3];
+      if (a <= 1) continue;
+      masks[nearest(rgb, [img[j * 4], img[j * 4 + 1], img[j * 4 + 2]])][j] = a / 255;
+    }
+    return cols.map(function (c, k) { return { color: c, mask: WB.mask.sealEdges(masks[k], g) }; })
+               .filter(function (l) { return l.mask && !WB.mask.empty(l.mask); });
   };
 
 })(window.WB);
@@ -2336,6 +2516,8 @@ window.WB = window.WB || {};
  *   WB.History(opts)              undo / redo with coalesced bursts
  *   WB.Session(opts)              designs kept in localStorage, one per tab
  *   WB.designsMenu(opts)          the list of them, to open, start, copy or delete
+ *   WB.swatches(used)             a strip of quick colours under every colour field
+ *   WB.artPaletteEditor(...)      the colours of a multi-colour picture, each re-pickable
  */
 window.WB = window.WB || {};
 (function (WB) {
@@ -3167,6 +3349,116 @@ window.WB = window.WB || {};
     return f.d <= bed.w + e && f.w <= bed.d + e
       ? { level: 'warn', msg: what + ' (' + size + ') fits the ' + on + ' only turned a quarter; turn it in your slicer.' }
       : { level: 'warn', msg: what + ' (' + size + ') is bigger than the ' + on + '. ' + advice };
+  };
+
+  /* ── global swatches ────────────────────────────────────────────────
+     Every input.colorfield gets a strip under it: the colours the design
+     already uses, then the ones saved in this browser (shared by every tool on
+     the same site). Click one to use it, + saves the field's colour,
+     right-click a saved one to forget it. Call with the colours in use whenever
+     they change; with no argument it just repaints, e.g. after adding fields. */
+  var SW_KEY = 'wb.swatches', swUsed = [], HEXRE = /^#[0-9A-F]{6}$/;
+  function swSaved() {
+    try {
+      var v = JSON.parse(localStorage.getItem(SW_KEY));
+      return Array.isArray(v) ? v.filter(function (c) { return HEXRE.test(c); }) : [];
+    } catch (e) { return []; }
+  }
+  function swStore(list) {
+    try { localStorage.setItem(SW_KEY, JSON.stringify(list)); } catch (e) { /* private mode: not kept */ }
+    WB.swatches();
+  }
+  function swButton(hex, title) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 's'; b.style.background = hex;
+    b.title = title; b.setAttribute('aria-label', title);
+    return b;
+  }
+  WB.swatches = function (used) {
+    if (used) swUsed = used.map(function (c) { return String(c).toUpperCase(); });
+    var saved = swSaved(), sig = swUsed.join() + '|' + saved.join();
+    document.querySelectorAll('input.colorfield').forEach(function (inp) {
+      var strip = inp._swatches;
+      if (!strip) {
+        strip = inp._swatches = document.createElement('div');
+        strip.className = 'swatchrow';
+        inp.insertAdjacentElement('afterend', strip);
+      }
+      if (strip._sig === sig) return;
+      strip._sig = sig;
+      strip.innerHTML = '';
+      var pick = function (hex) {
+        if (inp.disabled) return;
+        inp.value = hex.toLowerCase();
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      swUsed.forEach(function (c) {
+        var b = swButton(c, c + ' — in this design');
+        b.addEventListener('click', function () { pick(c); });
+        strip.appendChild(b);
+      });
+      saved.forEach(function (c) {
+        var b = swButton(c, c + ' — saved; right-click to forget');
+        b.classList.add('saved');
+        b.addEventListener('click', function () { pick(c); });
+        b.addEventListener('contextmenu', function (e) {
+          e.preventDefault();
+          swStore(swSaved().filter(function (x) { return x !== c; }));
+        });
+        strip.appendChild(b);
+      });
+      var add = document.createElement('button');
+      add.type = 'button'; add.className = 's add'; add.textContent = '+';
+      add.title = 'Save this colour as a swatch'; add.setAttribute('aria-label', add.title);
+      add.addEventListener('click', function () {
+        var c = inp.value.toUpperCase(), list = swSaved();
+        if (list.indexOf(c) < 0) swStore(list.concat(c));
+      });
+      strip.appendChild(add);
+    });
+  };
+
+  /* ── multi-colour picture ───────────────────────────────────────────
+     One row per colour found in the picture: what it prints as, or Skip.
+     getArt() returns the picture being edited; edit(fn) wraps a change the
+     way the app does (begin an undo step, fn(art), rebuild). Cheap to call on
+     every repaint: it redraws only when the colours change. */
+  WB.artPaletteEditor = function (box, getArt, edit) {
+    var art = getArt();
+    var pal = art && WB.resolveArtMode(art) === 'colors' ? WB.artPalette(art) : [];
+    var sig = JSON.stringify(pal);
+    if (box._sig === sig) return;
+    box._sig = sig;
+    box.innerHTML = '';
+    var set = function (src, v) {
+      edit(function (a) { var r = Object.assign({}, a.recolor); r[src] = v; a.recolor = r; });
+    };
+    pal.forEach(function (p) {
+      var row = document.createElement('div');
+      row.className = 'row palrow';
+      var found = document.createElement('span');
+      found.className = 'found'; found.style.background = p.src;
+      found.title = 'Found in the picture: ' + p.src;
+      var inp = document.createElement('input');
+      inp.type = 'color'; inp.className = 'colorfield';
+      inp.value = (p.out || p.src).toLowerCase();
+      inp.disabled = !p.out;
+      inp.setAttribute('aria-label', 'Print ' + p.src + ' as');
+      inp.addEventListener('change', function () { set(p.src, inp.value.toUpperCase()); });
+      var lab = document.createElement('label');
+      lab.className = 'chk';
+      var skip = document.createElement('input');
+      skip.type = 'checkbox'; skip.checked = !p.out;
+      skip.addEventListener('change', function () { set(p.src, skip.checked ? '' : p.src); });
+      lab.appendChild(skip); lab.appendChild(document.createTextNode(' Skip'));
+      var pick = document.createElement('div');
+      pick.className = 'pick';
+      pick.appendChild(inp);
+      row.appendChild(found); row.appendChild(pick); row.appendChild(lab);
+      box.appendChild(row);
+    });
+    WB.swatches();
   };
 
 })(window.WB);

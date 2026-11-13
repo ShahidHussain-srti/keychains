@@ -25,9 +25,13 @@ and double-click `index.html`. It works offline too: the geometry engine
   position. There are 67 fonts, from clean and serif to script, pixel, horror and other odd
   ones, all shipped with the app so they look the same on every computer; solid or outlined,
   with spacing, rotation and multiple lines.
-- **Pictures**: upload an image or sketch one in the built-in drawing pad.
-- **Colours**: one per element. A design needs only as many filaments as it has distinct
-  colours.
+- **Pictures**: upload an image or sketch one in the built-in drawing pad. Trace **All
+  colours** keeps an image's own colours, with a slider to merge shades that look alike;
+  each colour found can be printed as another or skipped.
+- **Colours**: one per element, or per colour in a multi-colour picture. A design needs only
+  as many filaments as it has distinct colours. Under every colour field is a strip of
+  swatches: the colours already in the design, then any you save with **+** (kept in this
+  browser; right-click one to forget it).
 - **Keyring hole**: pick one of five positions or drag it wherever you want.
 
 The layout and the 3D preview sit side by side, or you can switch to either one on its

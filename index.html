@@ -4,7 +4,7 @@
      Licensed under the GNU General Public License v3.0 or later; see LICENSE. -->
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keychain Studio — design multi-colour 3D-printed keychains</title>
@@ -332,6 +332,10 @@
           <div class="row" data-show="~a.source:image">
             <input type="file" id="art-file" accept="image/*" aria-label="Upload a picture">
           </div>
+          <div class="row linkrow" data-show="~a.source:image">
+            <input type="url" id="art-url" placeholder="…or paste a picture's web address" aria-label="Picture link">
+            <button class="ghost" id="art-url-go">Use link</button>
+          </div>
           <div class="row" data-show="~a.source:draw">
             <button class="ghost wide" data-draw="art">Open drawing pad…</button>
           </div>
@@ -409,10 +413,12 @@
     </details>
     <details class="privacy">
       <summary>Privacy</summary>
-      <p>No accounts, cookies, analytics or trackers, and the page loads nothing from other sites. Your designs and
-        pictures stay in this browser (its local storage), and leave it only as files you save or export yourself.</p>
+      <p>No accounts, cookies, analytics or trackers, and the page loads nothing from other sites except a picture
+        you add by its web address, fetched from that address. Your designs and uploaded pictures stay in this browser
+        (its local storage), and leave it only as files you save or export yourself.</p>
       <p>A share link carries the design after the <code>#</code>, which browsers never send to the server, so it goes
-        only where you send it — and anyone you send it to can read it. Pictures are never put in links.</p>
+        only where you send it — and anyone you send it to can read it. Uploaded pictures are never put in links; a
+        picture's web address is, and opening the link loads the picture from that site, which sees the request.</p>
       <p>The site is hosted on GitHub Pages; GitHub keeps standard request logs (such as IP addresses) under
         <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener noreferrer">its privacy statement</a>.
         To delete everything kept here: Designs → Delete all saved data, or clear this site's data in your browser.</p>

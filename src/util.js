@@ -24,7 +24,7 @@ window.KC = window.KC || {};
   KC.newArt = function (opts) {
     return Object.assign({
       id: WB.newId('a'), source: 'none', mode: 'auto', threshold: 0.5, size: 15,
-      rotation: 0, mirror: false, x: -17, y: 0, color: '#4b8ef0', merge: 12, recolor: {}
+      rotation: 0, mirror: false, x: -17, y: 0, color: '#4b8ef0', merge: 12, recolor: {}, url: ''
     }, opts || {});
   };
 

@@ -37,6 +37,34 @@ window.WB = window.WB || {};
   WB.isImageData = function (v) {
     return typeof v === 'string' && /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/.test(v);
   };
+  /* A plain https link, as a picture's address may be (designs and share
+     links carry these, so they are checked before use). Not http: an https
+     page would block it anyway. */
+  WB.isImageURL = function (v) {
+    return typeof v === 'string' && v.length <= 2048 && /^https:\/\/[^\s"'<>\\]+$/i.test(v);
+  };
+  /* A picture from inline data or a link, as a canvas at most `max` px on its
+     longest side (0: as it is). A link loads only from a site that lets
+     other pages use its pictures (CORS); otherwise this rejects. */
+  WB.loadImage = function (src, max) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      if (!/^data:/.test(src)) img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        var k = max ? Math.min(1, max / Math.max(img.width, img.height)) : 1;
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        var cx = c.getContext('2d', { willReadFrequently: true });
+        cx.drawImage(img, 0, 0, c.width, c.height);
+        try { cx.getImageData(0, 0, 1, 1); } catch (e) { reject(e); return; }   // tainted: unusable
+        c._rev = Date.now();
+        resolve(c);
+      };
+      img.onerror = function () { reject(new Error('The picture could not be loaded.')); };
+      img.src = src;
+    });
+  };
   /* Every string under a key that names a colour (color, colour, base/lid
      inside `colors`, …) that isn't a hex colour goes back to the default at
      the same place, or a neutral grey. */

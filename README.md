@@ -25,7 +25,9 @@ and double-click `index.html`. It works offline too: the geometry engine
   position. There are 67 fonts, from clean and serif to script, pixel, horror and other odd
   ones, all shipped with the app so they look the same on every computer; solid or outlined,
   with spacing, rotation and multiple lines.
-- **Pictures**: upload an image or sketch one in the built-in drawing pad. Trace **All
+- **Pictures**: upload an image, paste its web address (https, from a site that allows
+  other pages to use its pictures; share links carry it), or sketch one in the built-in
+  drawing pad. Trace **All
   colours** keeps an image's own colours, with a slider to merge shades that look alike;
   each colour found can be printed as another or skipped.
 - **Colours**: one per element, or per colour in a multi-colour picture. A design needs only
@@ -113,10 +115,12 @@ If you need a case rather than a keychain, have a look at
 ## Privacy
 
 There are no accounts, cookies, analytics or trackers, and the page loads nothing from
-other sites. Designs and pictures stay in your browser's local storage, which the app
+other sites except a picture you add by its web address. Designs and uploaded pictures stay in your browser's local storage, which the app
 only uses to keep your work, and leave it only as files you save or export. A share link
 holds the design after the `#`, which browsers don't send to the server, so it goes only
-where you send it (and anyone with it can read it); pictures never go in links. The site
+where you send it (and anyone with it can read it); uploaded pictures never go in links.
+A picture added by its web address travels as that address, and opening the link loads it
+from that site, which sees the request. The site
 is hosted on GitHub Pages, where GitHub keeps standard request logs under its own privacy
 statement. Designs → Delete all saved data removes everything the app has kept.
 

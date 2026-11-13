@@ -3490,6 +3490,33 @@ window.WB = window.WB || {};
     WB.swatches();
   };
 
+  /* ── hide for a while ───────────────────────────────────────────────
+     An eye beside a list row: hides a text or picture from the views and the
+     exported model until shown again. */
+  var EYE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" ' +
+            'stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/>' +
+            '<circle cx="12" cy="12" r="3"/>';
+  WB.eyeButton = function (hidden, toggle) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'eye ghost';
+    b.title = hidden ? 'Show again' : 'Hide for now';
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+    b.innerHTML = EYE + (hidden ? '<path d="M3 3l18 18"/>' : '') + '</svg>';
+    b.addEventListener('click', toggle);
+    return b;
+  };
+  /* The warning to show while anything is hidden: faces is a list of faces
+     with texts and arts. */
+  WB.hiddenWarning = function (faces) {
+    var n = 0;
+    faces.forEach(function (f) {
+      (f.texts || []).concat(f.arts || []).forEach(function (e) { if (e.hidden) n++; });
+    });
+    return n ? [{ level: 'warn', msg: (n === 1 ? 'A text or picture is' : n + ' texts and pictures are') +
+      ' hidden: left out of the views and the exported model until shown again.' }] : [];
+  };
+
 })(window.WB);
 
 /* ── viewer.js ── */

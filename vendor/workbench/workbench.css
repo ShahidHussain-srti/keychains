@@ -219,6 +219,10 @@ input[type=file]::file-selector-button{
 /* element lists */
 .itemlist{display:flex; flex-direction:column; gap:4px; margin-bottom:9px}
 .itemlist:empty{display:none}
+.itemline{display:flex; gap:4px; align-items:stretch}
+.itemline .itemrow{flex:1; min-width:0}
+.itemline .eye{flex:none; width:28px; padding:0; display:grid; place-items:center}
+.itemline.off .itemrow{opacity:.5; text-decoration:line-through}
 .itemrow{
   display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px;
   border:1px solid var(--line2); background:var(--bg); cursor:pointer; font-size:12px;

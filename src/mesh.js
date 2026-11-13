@@ -303,7 +303,7 @@ window.KC = window.KC || {};
       });
 
       (face.texts || []).forEach(function (tx, i) {
-        if (!(tx.content || '').trim()) return;
+        if (tx.hidden || !(tx.content || '').trim()) return;
         var got = m.raw.some(function (r) { return r.kind === 'text' && r.index === i; });
         if (!got) {
           warn.push({ level: 'warn', msg: 'Text ' + (i + 1) + tag +

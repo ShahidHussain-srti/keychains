@@ -92,13 +92,19 @@
                       '<span class="num">' + (i + 1) + '</span>';
         $('.dot', b).style.background = item.color;
         $('.txt', b).textContent = label;
+        var line = document.createElement('div');
+        line.className = 'itemline' + (item.hidden ? ' off' : '');
+        line.appendChild(b);
+        line.appendChild(WB.eyeButton(item.hidden, function () {
+          beginEdit(0); item.hidden = !item.hidden; refresh(); apply();
+        }));
         b.addEventListener('click', function () {
           f[row[0] === 'text' ? 'textIdx' : 'artIdx'] = i;
           preview.selected = row[0] + ':' + i;
           refresh();
           apply();
         });
-        box.appendChild(b);
+        box.appendChild(line);
       });
     });
 
@@ -510,7 +516,7 @@
     }
 
     stats(model, performance.now() - t0);
-    showWarnings(model.warnings.concat(bedWarnings(model)));
+    showWarnings(WB.hiddenWarning([state.sides.front, state.sides.back]).concat(model.warnings, bedWarnings(model)));
   }, 220);
 
   /* The print bed, when shown, sits under the keychain, centred on it. */
@@ -987,8 +993,8 @@
     ['front', 'back'].forEach(function (w) {
       var f = full.sides && full.sides[w];
       if (!f) return;
-      f.texts = (f.texts || []).map(function (t) { return WB.shareTrim(t, KC.newText(), ['id']); });
-      f.arts = (f.arts || []).map(function (a) { return WB.shareTrim(a, KC.newArt(), ['id']); });
+      f.texts = (f.texts || []).map(function (t) { return WB.shareTrim(t, KC.newText(), ['id', 'hidden']); });
+      f.arts = (f.arts || []).map(function (a) { return WB.shareTrim(a, KC.newArt(), ['id', 'hidden']); });
     });
     var payload = { version: 2, diff: 1, state: WB.shareDiff(base, full) || {} };
     if (pics) payload.picturesLeftOut = pics;

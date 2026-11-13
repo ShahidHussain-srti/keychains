@@ -34,6 +34,8 @@ and double-click `index.html`. It works offline too: the geometry engine
   as many filaments as it has distinct colours. Under every colour field is a strip of
   swatches: the colours already in the design, then any you save with **+** (kept in this
   browser; right-click one to forget it).
+- **Hide for now**: the eye beside a text or picture in its list takes it out of the views
+  and the export while you work on what's underneath; a warning stays up until it's shown again.
 - **Keyring hole**: pick one of five positions or drag it wherever you want.
 
 The layout and the 3D preview sit side by side, or you can switch to either one on its

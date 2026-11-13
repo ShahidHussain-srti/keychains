@@ -1693,10 +1693,28 @@ window.WB = window.WB || {};
       list.forEach(function (g, i) { if (g.edge > edges * 0.5) bg = i; });
     }
     return list.map(function (g, i) {
-      var o = rec[g.hex];
-      if (o !== '' && !HEX.test(o)) o = i === bg ? '' : g.hex;   // saved or shared junk falls back
+      var o = WB.recolorOf(rec, g.hex);
+      if (o === undefined) o = i === bg ? '' : g.hex;
       return { src: g.hex, out: o.toUpperCase(), count: g.count };
     });
+  };
+
+  /* What a found colour was set to print as ('#hex', '' left out, or
+     undefined). Found colours are averages, and on another browser or
+     after a reload one can come out a shade off, so a choice saved for a
+     colour that looks the same (ΔE under 10) still counts. Saved or shared
+     junk is ignored. */
+  WB.recolorOf = function (rec, hex) {
+    var ok = function (v) { return v === '' || HEX.test(v); };
+    if (!rec) return undefined;
+    if (Object.prototype.hasOwnProperty.call(rec, hex)) return ok(rec[hex]) ? rec[hex] : undefined;
+    var lab = toLab.apply(null, rgb255(hex)), best, bd = 100;
+    Object.keys(rec).forEach(function (k) {
+      if (!HEX.test(k) || !ok(rec[k])) return;
+      var d = d2(toLab.apply(null, rgb255(k)), lab);
+      if (d < bd) { bd = d; best = rec[k]; }
+    });
+    return best;
   };
 
   /* The distinct colours a picture prints in. */
